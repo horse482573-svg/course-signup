@@ -30,6 +30,8 @@ const S = {
   importing:null, impRows:null, impMode:"replace", impText:"", impBusy:false,
 };
 const myKey = () => S.me ? keyOf(S.me) : null;
+/* 本站報名：暫停中。沒有報名連結的課程，名單以舉辦人匯入的官方名單為準。改成 true 即可恢復。 */
+const ALLOW_ONSITE = false;
 
 const $ = s => document.querySelector(s);
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -54,7 +56,7 @@ async function api(path, body, opts={}){
   return j;
 }
 const MSG = {
-  network:"連線失敗，請檢查網路後再試一次", full:"這堂課已額滿", closed:"這堂課已截止報名",
+  onsite_closed:"本站報名暫停中，報名方式請洽課程舉辦人", network:"連線失敗，請檢查網路後再試一次", full:"這堂課已額滿", closed:"這堂課已截止報名",
   bad_input:"資料不完整，請檢查後再試", not_found:"找不到這堂課，可能已被刪除",
   bad_key:"管理密碼不對，請重新登入", no_password:"網站還沒設定管理密碼（ADMIN_PASSWORD）",
   too_large:"圖片太大，請換一張小一點的圖片", unsupported_type:"不支援這種圖片格式，請用 JPG 或 PNG",
@@ -88,20 +90,20 @@ function peopleFor(c){
   const ext = !!c.signupUrl;
   const off = officialFor(c.id).map(e=>({...profileOf(e), used:false}));
   const out = rosterFor(c.id).map(p=>{
-    if(!ext) return {...p, confirmed:true, src:"page"};
     const i = off.findIndex(o=>!o.used && sameP(p,o));
     if(i>=0) off[i].used = true;
+    if(!ext) return {...p, confirmed:true, src:"page"};
     return {...p, confirmed:i>=0, src:i>=0?"both":"self"};
   });
-  for(const o of off) if(!o.used) out.push({...profileOf(o), pkey:null, at:"", confirmed:true, src:"official"});
+  for(const o of off) if(!o.used) out.push({...profileOf(o), pkey:null, at:"", confirmed:true, src:ext?"official":"list"});
   return out;
 }
-const SRC_LABEL = {page:"本頁報名", both:"已確認", self:"待確認", official:"官方名單（未回報）"};
+const SRC_LABEL = {page:"本頁報名", both:"已確認", self:"待確認", official:"官方名單（未回報）", list:"官方名單"};
 /* null | "confirmed" | "pending" | "missing" */
 function myState(c){
   const rec = myRec(c.id);
-  if(!c.signupUrl) return rec ? "confirmed" : null;
   if(S.me && officialFor(c.id).some(o=>sameP(S.me,o))) return "confirmed";
+  if(!c.signupUrl) return rec ? "confirmed" : null;
   if(!rec) return null;
   const info = rosterInfo(c.id);
   return (info && String(info.importedAt||"") > String(rec.at||"")) ? "missing" : "pending";
@@ -215,11 +217,15 @@ function courseCard(c){
     action = `<span class="who">確認以 <b>${esc(S.me.name)}</b> 報名？</span>
       <button class="btn primary" data-act="join-yes" data-id="${esc(c.id)}" ${S.busy?"disabled":""}>確認報名</button>
       <button class="btn link" data-act="join-no">取消</button>`;
+  } else if(mine && !myRec(c.id)){
+    action = `<span class="note">已在官方報名名單中找到你，報名完成。</span>`;
   } else if(mine){
     action = closed ? `<span class="who">你已報名這堂課</span>`
       : `<button class="btn" data-act="leave" data-id="${esc(c.id)}" ${S.busy?"disabled":""}>取消報名</button>`;
-  } else if(!closed && !full){
+  } else if(!closed && !full && ALLOW_ONSITE){
     action = `<button class="btn primary" data-act="join" data-id="${esc(c.id)}">我要報名</button>`;
+  } else if(!closed){
+    action = `<span class="note">報名方式請洽課程舉辦人。舉辦人更新名單後，你的報名狀態會顯示在這裡${S.me?"":"（請先點右上角填寫報名資料，才能比對到你）"}。</span>`;
   }
   const k = myKey();
   return `<article class="course${past?" past":""}" id="c-${esc(c.id)}">
@@ -242,7 +248,7 @@ function courseCard(c){
       </div>
       <div class="actions">${action}</div>
       <div class="roster">
-        <h4>報名名單${ext&&rosterInfo(c.id)?` · 已於 ${fmtTime(rosterInfo(c.id).importedAt)} 核對官方名單`:""}</h4>
+        <h4>報名名單${rosterInfo(c.id)?` · 已於 ${fmtTime(rosterInfo(c.id).importedAt)} 核對官方名單`:""}</h4>
         ${n?`<div class="chips">${people.map(r=>`<span class="chip${r.pkey&&r.pkey===k?" me":""}${r.confirmed?"":" pend"}">${esc(r.name)}${subline(r)?`<small>${esc(subline(r))}</small>`:""}${r.confirmed?"":`<small>待確認</small>`}</span>`).join("")}</div>`
            :`<span class="who">還沒有人報名，成為第一位吧。</span>`}
       </div>
@@ -279,7 +285,7 @@ function adminView(){
       <div class="grid">
         <label class="full">課程名稱 *<input id="f-title" required maxlength="80" value="${esc(c.title)}" placeholder="例如：Excel 樞紐分析實戰"></label>
         <label class="full">報名連結（選填）<input id="f-url" type="text" inputmode="url" autocomplete="off" maxlength="2000" value="${esc(c.signupUrl)}" placeholder="貼上 Google 表單或其他報名系統的網址，例如 https://forms.gle/…">
-          <span class="hint">留空：同事直接在本頁報名。填入網址：卡片會出現「前往報名」按鈕，同事報完名回來按「我已完成報名」，你再匯入官方名單核對。</span></label>
+          <span class="hint">留空：卡片不顯示報名按鈕，名單以你匯入的官方名單為準。填入網址：卡片會出現「前往報名」按鈕，同事報完名回來按「我已完成報名」，你再匯入官方名單核對。</span></label>
         <label>日期<input id="f-date" type="date" value="${esc(c.date)}"></label>
         <label>時間<input id="f-time" maxlength="40" value="${esc(c.time)}" placeholder="14:00–16:00"></label>
         <label>地點<input id="f-location" maxlength="60" value="${esc(c.location)}" placeholder="3F 大會議室 / 線上"></label>
@@ -315,13 +321,13 @@ function adminView(){
       <div class="meta" style="margin:4px 0">${esc(c.date||"日期待定")} ${esc(c.time||"")} ${c.location?"· "+esc(c.location):""}</div>
       ${ext?`<div class="ext" style="margin-bottom:4px">外部報名：<a href="${esc(c.signupUrl)}" target="_blank" rel="noopener noreferrer">${esc(c.signupUrl)}</a></div>
         <div class="hint" style="margin-bottom:12px">${info?`官方名單 ${officialFor(c.id).length} 人，${fmtTime(info.importedAt)} 匯入`:"尚未匯入官方名單"}${nPend?` · <b style="color:var(--warn)">${nPend} 人自行回報、尚未在官方名單中找到</b>`:""}</div>`
-        :`<div style="margin-bottom:12px"></div>`}
-      ${r.length?`<div class="tbl"><table><thead><tr><th>#</th><th>業務單位</th><th>事業部</th><th>姓名</th><th>職稱</th>${ext?"<th>狀態</th>":""}<th>回報時間</th></tr></thead><tbody>
-        ${r.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.unit||"—")}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.title||"—")}</td>${ext?`<td><span class="pill ${p.src==="self"?"pending":"mine"}">${SRC_LABEL[p.src]}</span></td>`:""}<td class="t">${fmtTime(p.at)||"—"}</td></tr>`).join("")}
+        :`<div class="hint" style="margin-bottom:12px">本站報名暫停中 · ${info?`官方名單 ${officialFor(c.id).length} 人，${fmtTime(info.importedAt)} 匯入`:"尚未匯入官方名單"}</div>`}
+      ${r.length?`<div class="tbl"><table><thead><tr><th>#</th><th>業務單位</th><th>事業部</th><th>姓名</th><th>職稱</th><th>狀態</th><th>回報時間</th></tr></thead><tbody>
+        ${r.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.unit||"—")}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.title||"—")}</td><td><span class="pill ${p.src==="self"?"pending":"mine"}">${SRC_LABEL[p.src]}</span></td><td class="t">${fmtTime(p.at)||"—"}</td></tr>`).join("")}
       </tbody></table></div>`:`<p class="who" style="margin:0">尚無人報名</p>`}
       ${S.importing===c.id?importBox(c):""}
       <div class="actions" style="margin-top:12px">
-        ${ext&&S.importing!==c.id?`<button class="btn primary" data-act="imp-open" data-id="${esc(c.id)}">${info?"重新匯入官方名單":"匯入官方名單"}</button>`:""}
+        ${S.importing!==c.id?`<button class="btn primary" data-act="imp-open" data-id="${esc(c.id)}">${info?"重新匯入官方名單":"匯入官方名單"}</button>`:""}
         <button class="btn" data-act="edit" data-id="${esc(c.id)}">編輯</button>
         <button class="btn" data-act="toggle" data-id="${esc(c.id)}">${c.status==="closed"?"重新開放報名":"截止報名"}</button>
         ${r.length?`<button class="btn" data-act="csv" data-id="${esc(c.id)}">下載名單 CSV</button>`:""}

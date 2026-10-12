@@ -124,6 +124,7 @@ export async function onRequest({ request, env, params }) {
         if (!c) return J({ ok: false, error: "not_found" }, 404);
         if (c.status === "closed" || (c.date && c.date < todayTW())) return J({ ok: false, error: "closed" }, 409);
         const ext = !!c.signupUrl;
+        if (!ext) return J({ ok: false, error: "onsite_closed" }, 403); // 本站報名暫停中
         const pkey = keyOf(p);
         if (!ext && c.capacity > 0) {
           const n = await db.prepare("SELECT COUNT(*) AS n FROM signups WHERE course_id = ? AND pkey != ?").bind(c.id, pkey).first();
