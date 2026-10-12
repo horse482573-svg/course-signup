@@ -81,8 +81,9 @@ function rosterFor(cid){ return S.signups.filter(s=>s.course_id===cid).map(s=>({
 function myRec(cid){ const k=myKey(); return k ? S.signups.find(s=>s.course_id===cid && s.pkey===k) : null; }
 function sameP(a,b){
   const na=normName(a.name); if(!na || na!==normName(b.name)) return false;
-  const ua=normUnit(a.unit), ub=normUnit(b.unit);
-  return !ua || !ub || ua===ub || ua.includes(ub) || ub.includes(ua);
+  // 核對規則：姓名＋事業部相符即可（不看業務單位、職稱）。事業部允許包含關係，例如「紅包聯」＝「紅包聯事業部」
+  const da=normUnit(a.division), db=normUnit(b.division);
+  return !da || !db || da===db || da.includes(db) || db.includes(da);
 }
 const officialFor = cid => (S.rosters[cid] && S.rosters[cid].entries) || [];
 const rosterInfo = cid => S.rosters[cid] || null;
@@ -407,7 +408,7 @@ function cleanRows(arr){
   const out=[];
   for(const r of (Array.isArray(arr)?arr:[])){
     const p = profileOf({unit:String(r?.unit??"").trim().slice(0,20), division:String(r?.division??"").trim().slice(0,30), name:String(r?.name??"").trim().slice(0,30), title:String(r?.title??"").trim().slice(0,20)});
-    if(p.name && !out.some(o=>sameP(o,p) && normUnit(o.unit)===normUnit(p.unit))) out.push(p);
+    if(p.name && !out.some(o=>sameP(o,p) && normUnit(o.division)===normUnit(p.division))) out.push(p);
   }
   return out;
 }
