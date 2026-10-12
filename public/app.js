@@ -1,0 +1,612 @@
+/* 公司課程報名 — front end (talks to /api on Cloudflare Pages Functions) */
+"use strict";
+
+const ls = {
+  get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
+  set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} },
+};
+const ss = {
+  get(k){ try{ return sessionStorage.getItem(k); }catch(e){ return null; } },
+  set(k,v){ try{ sessionStorage.setItem(k,v); }catch(e){} },
+  del(k){ try{ sessionStorage.removeItem(k); }catch(e){} },
+};
+
+const PF = ["unit","division","name","title"];
+const PF_LABEL = {unit:"業務單位",division:"事業部名稱",name:"姓名",title:"職稱"};
+const profileOf = o => ({unit:o?.unit||"", division:o?.division||"", name:o?.name||"", title:o?.title||""});
+const profileDone = o => !!o && PF.every(k=>String(o[k]||"").trim());
+const subline = r => [r.unit, r.division, r.title].filter(Boolean).join(" · ");
+const normName = s => String(s||"").replace(/[\s　·．.\-_()（）]/g,"").toLowerCase();
+const normUnit = s => String(s||"").replace(/[\s　]/g,"").toLowerCase();
+const keyOf = p => normName(p.name) + "|" + normUnit(p.unit);
+
+let savedMe = null; try{ savedMe = JSON.parse(ls.get("cs-profile")); }catch(e){}
+const S = {
+  tab:"shelf", courses:[], signups:[], rosters:{}, loaded:false,
+  me: profileDone(savedMe) ? profileOf(savedMe) : null,
+  adminKey: ss.get("cs-admin")||"", isOwner:false,
+  editing:null, confirmDel:null, pendingJoin:null, busy:false, editProfile:false, loginOpen:false,
+  draft:{poster:"",payQr:""}, uploaded:[],
+  importing:null, impRows:null, impMode:"replace", impText:"", impBusy:false,
+};
+const myKey = () => S.me ? keyOf(S.me) : null;
+
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const WD = ["日","一","二","三","四","五","六"];
+const blob = id => "/api/image/" + encodeURIComponent(id);
+
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast.h); toast.h=setTimeout(()=>t.hidden=true,2600); }
+function today(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function fmtTime(iso){ if(!iso) return ""; const d=new Date(iso); if(isNaN(d)) return ""; return (d.getMonth()+1)+"/"+d.getDate()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
+
+/* ---------- API ---------- */
+async function api(path, body, opts={}){
+  const headers = {};
+  if(path.startsWith("admin/")) headers["x-admin-key"] = opts.key ?? S.adminKey;
+  let init = {method: body===undefined ? "GET" : "POST", headers};
+  if(body instanceof Blob){ init.body = body; headers["content-type"] = body.type; }
+  else if(body!==undefined){ init.body = JSON.stringify(body); headers["content-type"] = "application/json"; }
+  let r;
+  try{ r = await fetch("/api/"+path, init); }catch(e){ throw {error:"network"}; }
+  let j = null; try{ j = await r.json(); }catch(e){}
+  if(!j || !j.ok) throw (j || {error:"server"});
+  return j;
+}
+const MSG = {
+  network:"連線失敗，請檢查網路後再試一次", full:"這堂課已額滿", closed:"這堂課已截止報名",
+  bad_input:"資料不完整，請檢查後再試", not_found:"找不到這堂課，可能已被刪除",
+  bad_key:"管理密碼不對，請重新登入", no_password:"網站還沒設定管理密碼（ADMIN_PASSWORD）",
+  too_large:"圖片太大，請換一張小一點的圖片", unsupported_type:"不支援這種圖片格式，請用 JPG 或 PNG",
+};
+const errMsg = e => MSG[e && e.error] || "操作沒有成功，請稍後再試";
+
+async function refresh(soft){
+  try{
+    const r = await api("state");
+    S.courses = r.courses; S.signups = r.signups; S.rosters = r.rosters || {};
+    S.loaded = true;
+    $("#sync").textContent = "最後更新 " + fmtTime(new Date().toISOString()) + " · 每 20 秒自動更新";
+  }catch(e){
+    $("#sync").textContent = "連線失敗，稍後會自動重試";
+    if(!S.loaded){ $("#view").innerHTML = `<div class="empty"><strong>課程暫時無法載入</strong>請確認網路後重新整理頁面。</div>`; return; }
+  }
+  render(soft);
+}
+
+/* ---------- derived data ---------- */
+function rosterFor(cid){ return S.signups.filter(s=>s.course_id===cid).map(s=>({...profileOf(s), pkey:s.pkey, at:s.at})); }
+function myRec(cid){ const k=myKey(); return k ? S.signups.find(s=>s.course_id===cid && s.pkey===k) : null; }
+function sameP(a,b){
+  const na=normName(a.name); if(!na || na!==normName(b.name)) return false;
+  const ua=normUnit(a.unit), ub=normUnit(b.unit);
+  return !ua || !ub || ua===ub || ua.includes(ub) || ub.includes(ua);
+}
+const officialFor = cid => (S.rosters[cid] && S.rosters[cid].entries) || [];
+const rosterInfo = cid => S.rosters[cid] || null;
+function peopleFor(c){
+  const ext = !!c.signupUrl;
+  const off = officialFor(c.id).map(e=>({...profileOf(e), used:false}));
+  const out = rosterFor(c.id).map(p=>{
+    if(!ext) return {...p, confirmed:true, src:"page"};
+    const i = off.findIndex(o=>!o.used && sameP(p,o));
+    if(i>=0) off[i].used = true;
+    return {...p, confirmed:i>=0, src:i>=0?"both":"self"};
+  });
+  for(const o of off) if(!o.used) out.push({...profileOf(o), pkey:null, at:"", confirmed:true, src:"official"});
+  return out;
+}
+const SRC_LABEL = {page:"本頁報名", both:"已確認", self:"待確認", official:"官方名單（未回報）"};
+/* null | "confirmed" | "pending" | "missing" */
+function myState(c){
+  const rec = myRec(c.id);
+  if(!c.signupUrl) return rec ? "confirmed" : null;
+  if(S.me && officialFor(c.id).some(o=>sameP(S.me,o))) return "confirmed";
+  if(!rec) return null;
+  const info = rosterInfo(c.id);
+  return (info && String(info.importedAt||"") > String(rec.at||"")) ? "missing" : "pending";
+}
+function isMine(cid){ const c=S.courses.find(x=>x.id===cid); return !!(c && myState(c)); }
+const sortedCourses = () => [...S.courses].sort((a,b)=>String(a.date||"9999").localeCompare(String(b.date||"9999")));
+
+/* ---------- render ---------- */
+function render(soft){
+  $("#n-all").textContent = S.courses.length;
+  $("#n-mine").textContent = S.courses.filter(c=>isMine(c.id)).length;
+  $("#tab-admin").hidden = !S.isOwner;
+  if(S.tab==="admin" && !S.isOwner) S.tab="shelf";
+  document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===S.tab && !S.loginOpen)));
+  $("#adminBtn").textContent = S.isOwner ? "登出課程管理" : "舉辦人登入";
+  $("#adminBtn").dataset.act = S.isOwner ? "admin-logout" : "admin-login";
+  renderWho(); renderProfilePanel();
+  if(!S.loaded) return;
+  const v = $("#view");
+  if(S.loginOpen){ if(!soft) v.innerHTML = loginView(); return; }
+  if(S.tab==="admin"){
+    if(soft && ((S.editing && $("#courseForm")) || S.importing)) return;
+    v.innerHTML = adminView();
+  }
+  else if(S.tab==="shelf") v.innerHTML = shelfView();
+  else v.innerHTML = listView(S.tab==="mine");
+}
+function renderWho(){
+  $("#who").innerHTML = S.me
+    ? `目前身分：<b>${esc(S.me.name)}</b> · ${esc(subline(S.me))}${S.isOwner?" · 課程舉辦人":""} <button class="btn link" data-act="edit-profile" style="padding:0 0 0 6px;font-size:13px">修改</button>`
+    : `<button class="btn link" data-act="edit-profile" style="padding:0;font-size:13px">填寫我的報名資料</button>${S.isOwner?" · 課程舉辦人":""}`;
+}
+
+/* 課程總覽（書架） */
+const STAMP = {confirmed:"已報名", pending:"已報名（待確認）", missing:"請確認報名"};
+function shelfItem(c){
+  const state = myState(c);
+  const past = c.date && c.date < today();
+  const cap = Number(c.capacity)||0, n = peopleFor(c).length;
+  const tag = past ? "已結束" : c.status==="closed" ? "報名截止" : (cap>0 && n>=cap) ? "額滿" : "";
+  const d = c.date ? new Date(c.date+"T00:00:00") : null;
+  const when = d ? `${d.getMonth()+1} 月 ${d.getDate()} 日（${WD[d.getDay()]}）${c.time?" · "+esc(c.time):""}` : "日期待定";
+  const cover = c.poster
+    ? `<img src="${esc(blob(c.poster))}" alt="${esc(c.title)} 課程海報" loading="lazy">`
+    : `<span class="ph"><span class="ph-date">${d?`${d.getMonth()+1}/${d.getDate()}`:"TBD"}</span><span class="ph-title">${esc(c.title)}</span><span class="ph-foot">${esc(c.instructor||c.location||"公司課程")}</span></span>`;
+  return `<article class="book${past?" past":""}">
+    <button type="button" class="cover" data-act="goto" data-id="${esc(c.id)}" aria-label="查看 ${esc(c.title)}">
+      ${cover}
+      ${state?`<span class="stamp stamp-${state}">${STAMP[state]}</span>`:""}
+      ${tag?`<span class="tag">${tag}</span>`:""}
+    </button>
+    <div class="book-meta"><div class="bt">${esc(c.title)}</div><div class="bd">${when}</div></div>
+    <button type="button" class="btn ${state?"":"primary "}block" data-act="goto" data-id="${esc(c.id)}">${state?"查看報名狀態":"前往報名"}</button>
+  </article>`;
+}
+function shelfView(){
+  const cs = sortedCourses();
+  if(!cs.length) return listView(false);
+  const up = cs.filter(c=>!(c.date && c.date<today()));
+  const past = cs.filter(c=>c.date && c.date<today());
+  return (up.length?`<div class="shelf">${up.map(shelfItem).join("")}</div>`:`<div class="empty"><strong>目前沒有即將開課的課程</strong>新課程發布後會出現在這裡。</div>`)
+    + (past.length?`<h2 class="shelf-h">已結束的課程</h2><div class="shelf">${past.map(shelfItem).join("")}</div>`:"");
+}
+function gotoCourse(id){
+  S.tab="all"; S.loginOpen=false; render();
+  try{ history.replaceState(null,"","#c-"+id); }catch(e){}
+  const el = document.getElementById("c-"+id); if(!el) return;
+  const reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({behavior:reduce?"auto":"smooth", block:"start"});
+  el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+}
+
+function extHost(u){ try{ return new URL(u).hostname.replace(/^www\./,""); }catch(e){ return ""; } }
+const goLink = (c, primary) => `<a class="btn${primary?" primary":""}" href="${esc(c.signupUrl)}" target="_blank" rel="noopener noreferrer">前往報名 ↗</a>`;
+function extActions(c, state, closed){
+  if(S.pendingJoin===c.id && S.me){
+    return `<span class="who">你已經在報名系統送出報名了嗎？</span>
+      <button class="btn primary" data-act="join-yes" data-id="${esc(c.id)}" ${S.busy?"disabled":""}>是，我已完成報名</button>
+      <button class="btn link" data-act="join-no">還沒</button>`;
+  }
+  if(state==="confirmed") return `<span class="note">已在官方報名名單中找到你，報名完成。</span>`;
+  if(state==="pending") return `${closed?"":goLink(c,false)}<button class="btn link" data-act="leave" data-id="${esc(c.id)}" ${S.busy?"disabled":""}>撤回回報</button>
+      <span class="note">你已回報完成報名，等課程舉辦人核對官方名單後會變成「已確認」。</span>`;
+  if(state==="missing") return `${closed?"":goLink(c,true)}<button class="btn link" data-act="leave" data-id="${esc(c.id)}" ${S.busy?"disabled":""}>撤回回報</button>
+      <span class="note warn">舉辦人最近核對的官方名單裡找不到你。請確認報名表是否有送出成功，或姓名、業務單位是否填寫一致；確定有送出請聯絡舉辦人。</span>`;
+  if(closed) return "";
+  return `${goLink(c,true)}<button class="btn" data-act="join" data-id="${esc(c.id)}">我已完成報名</button>
+    <span class="note">在 ${esc(extHost(c.signupUrl)||"報名系統")} 送出報名後，回來按「我已完成報名」。</span>`;
+}
+
+function courseCard(c){
+  const people = peopleFor(c);
+  const n = people.length, cap = Number(c.capacity)||0;
+  const full = cap>0 && n>=cap, ext = !!c.signupUrl;
+  const state = myState(c), mine = !!state;
+  const past = c.date && c.date < today();
+  const closed = c.status==="closed" || past;
+  const d = c.date ? new Date(c.date+"T00:00:00") : null;
+  const pct = cap>0 ? Math.min(100, Math.round(n/cap*100)) : 0;
+  let pills = "";
+  if(state==="confirmed") pills += `<span class="pill mine">✓ 已經報名了</span>`;
+  else if(state==="pending") pills += `<span class="pill pending">已報名（待確認）</span>`;
+  else if(state==="missing") pills += `<span class="pill miss">⚠ 名單中找不到你</span>`;
+  if(past) pills += `<span class="pill closed">已結束</span>`;
+  else if(c.status==="closed") pills += `<span class="pill closed">報名截止</span>`;
+  else if(full) pills += `<span class="pill full">額滿</span>`;
+
+  let action = "";
+  if(ext) action = extActions(c, state, closed);
+  else if(S.pendingJoin===c.id && S.me){
+    action = `<span class="who">確認以 <b>${esc(S.me.name)}</b> 報名？</span>
+      <button class="btn primary" data-act="join-yes" data-id="${esc(c.id)}" ${S.busy?"disabled":""}>確認報名</button>
+      <button class="btn link" data-act="join-no">取消</button>`;
+  } else if(mine){
+    action = closed ? `<span class="who">你已報名這堂課</span>`
+      : `<button class="btn" data-act="leave" data-id="${esc(c.id)}" ${S.busy?"disabled":""}>取消報名</button>`;
+  } else if(!closed && !full){
+    action = `<button class="btn primary" data-act="join" data-id="${esc(c.id)}">我要報名</button>`;
+  }
+  const k = myKey();
+  return `<article class="course${past?" past":""}" id="c-${esc(c.id)}">
+    <div class="date">${d?`<span class="m">${d.getMonth()+1} 月</span><span class="d">${d.getDate()}</span><span class="w">週${WD[d.getDay()]}</span>`:`<span class="m">日期</span><span class="d">—</span><span class="w">待定</span>`}</div>
+    <div class="body">
+      <div class="title-row"><h3>${esc(c.title)}</h3>${pills}</div>
+      <div class="meta">
+        ${c.time?`<span>時間 <b>${esc(c.time)}</b></span>`:""}
+        ${c.location?`<span>地點 <b>${esc(c.location)}</b></span>`:""}
+        ${c.instructor?`<span>講師 <b>${esc(c.instructor)}</b></span>`:""}
+      </div>
+      ${c.poster?`<button type="button" class="poster" data-act="zoom" data-src="${esc(blob(c.poster))}" aria-label="放大海報"><img src="${esc(blob(c.poster))}" alt="${esc(c.title)} 課程海報" loading="lazy"></button>`:""}
+      ${c.summary?`<p class="summary">${esc(c.summary)}</p>`:""}
+      ${c.detail?`<details class="more"><summary>課程詳細介紹</summary><p>${esc(c.detail)}</p></details>`:""}
+      ${(c.payQr||c.payNote)?`<details class="more pay"${mine?" open":""}><summary>繳費資訊${mine?"（你已報名，請依下方資訊完成繳費）":""}</summary>
+        <div class="payrow">${c.payQr?`<img class="qr" src="${esc(blob(c.payQr))}" alt="繳費 QR Code" data-act="zoom" data-src="${esc(blob(c.payQr))}">`:""}${c.payNote?`<p>${esc(c.payNote)}</p>`:""}</div></details>`:""}
+      <div class="seats">
+        ${cap>0?`<div class="bar${full?" full":""}"><i style="width:${pct}%"></i></div><span>已報名 <span class="num">${n}</span> / <span class="num">${cap}</span> 人</span>`
+               :`<span>已報名 <span class="num">${n}</span> 人</span><span class="who">不限名額</span>`}
+      </div>
+      <div class="actions">${action}</div>
+      <div class="roster">
+        <h4>報名名單${ext&&rosterInfo(c.id)?` · 已於 ${fmtTime(rosterInfo(c.id).importedAt)} 核對官方名單`:""}</h4>
+        ${n?`<div class="chips">${people.map(r=>`<span class="chip${r.pkey&&r.pkey===k?" me":""}${r.confirmed?"":" pend"}">${esc(r.name)}${subline(r)?`<small>${esc(subline(r))}</small>`:""}${r.confirmed?"":`<small>待確認</small>`}</span>`).join("")}</div>`
+           :`<span class="who">還沒有人報名，成為第一位吧。</span>`}
+      </div>
+    </div>
+  </article>`;
+}
+function listView(onlyMine){
+  let cs = sortedCourses();
+  if(onlyMine) cs = cs.filter(c=>isMine(c.id));
+  if(!cs.length){
+    if(onlyMine) return `<div class="empty"><strong>你還沒有報名任何課程</strong>${S.me?"到「課程總覽」挑一堂吧。":"如果你在別台裝置報名過，點右上角「填寫我的報名資料」，填一樣的業務單位和姓名就會顯示。"}</div>`;
+    return S.isOwner
+      ? `<div class="empty"><strong>還沒有課程</strong>到「課程管理」新增第一堂課，同事就能在這裡看到並報名。<div style="margin-top:14px"><button class="btn primary" data-act="goto-new">新增課程</button></div></div>`
+      : `<div class="empty"><strong>目前沒有開放的課程</strong>課程舉辦人新增課程後，會自動出現在這裡。</div>`;
+  }
+  const upcoming = cs.filter(c=>!(c.date && c.date<today()));
+  const past = cs.filter(c=>c.date && c.date<today());
+  return `<div class="list">${upcoming.map(courseCard).join("")}</div>`
+    + (past.length?`<h2 class="shelf-h">已結束的課程</h2><div class="list">${past.map(courseCard).join("")}</div>`:"");
+}
+
+/* ---------- 舉辦人 ---------- */
+function loginView(){
+  return `<section class="panel"><h2>舉辦人登入</h2>
+    <form id="loginForm"><label>管理密碼<input id="l-key" type="password" autocomplete="current-password"></label>
+    <div class="form-foot"><span class="err" id="lErr"></span><button type="button" class="btn link" data-act="login-cancel">取消</button><button type="submit" class="btn primary">登入</button></div></form></section>`;
+}
+function adminView(){
+  const e = S.editing;
+  const c = e && e!=="new" ? (S.courses.find(x=>x.id===e)||{}) : {};
+  const form = e ? `<section class="panel">
+    <h2>${e==="new"?"新增課程":"編輯課程"}</h2>
+    <form id="courseForm">
+      <div class="grid">
+        <label class="full">課程名稱 *<input id="f-title" required maxlength="80" value="${esc(c.title)}" placeholder="例如：Excel 樞紐分析實戰"></label>
+        <label class="full">報名連結（選填）<input id="f-url" type="text" inputmode="url" autocomplete="off" maxlength="2000" value="${esc(c.signupUrl)}" placeholder="貼上 Google 表單或其他報名系統的網址，例如 https://forms.gle/…">
+          <span class="hint">留空：同事直接在本頁報名。填入網址：卡片會出現「前往報名」按鈕，同事報完名回來按「我已完成報名」，你再匯入官方名單核對。</span></label>
+        <label>日期<input id="f-date" type="date" value="${esc(c.date)}"></label>
+        <label>時間<input id="f-time" maxlength="40" value="${esc(c.time)}" placeholder="14:00–16:00"></label>
+        <label>地點<input id="f-location" maxlength="60" value="${esc(c.location)}" placeholder="3F 大會議室 / 線上"></label>
+        <label>講師<input id="f-instructor" maxlength="40" value="${esc(c.instructor)}"></label>
+        <label>名額（0 = 不限）<input id="f-capacity" type="number" min="0" step="1" value="${esc(c.capacity??0)}"></label>
+        <label>報名狀態<select id="f-status"><option value="open"${c.status!=="closed"?" selected":""}>開放報名</option><option value="closed"${c.status==="closed"?" selected":""}>截止報名</option></select></label>
+        <label class="full">一句話簡介<input id="f-summary" maxlength="140" value="${esc(c.summary)}" placeholder="這堂課能帶走什麼"></label>
+        <label class="full">詳細介紹<textarea id="f-detail" maxlength="3000" placeholder="課程大綱、適合對象、需攜帶物品…">${esc(c.detail)}</textarea></label>
+        <div class="full upl"><span>課程海報（JPG、PNG、WebP；大圖會自動壓縮）</span><div class="upl-row" id="slot-poster">${uploadSlot("poster")}</div></div>
+        <fieldset class="full pay"><legend>繳費資訊</legend>
+          <div class="upl"><span>繳費 QR Code 圖片</span><div class="upl-row" id="slot-payQr">${uploadSlot("payQr")}</div></div>
+          <label>繳費說明<textarea id="f-paynote" maxlength="1000" placeholder="例如：費用 NT$500，請於 10/20 前轉帳，備註填寫姓名。&#10;銀行代碼 / 帳號、LINE Pay 或聯絡窗口…">${esc(c.payNote)}</textarea></label>
+        </fieldset>
+      </div>
+      <div class="form-foot"><span class="err" id="formErr"></span>
+        <button type="button" class="btn link" data-act="cancel-edit">取消</button>
+        <button type="submit" class="btn primary" ${S.busy?"disabled":""}>${e==="new"?"發布課程":"儲存變更"}</button>
+      </div>
+    </form></section>`
+    : `<div class="actions" style="margin-bottom:16px"><button class="btn primary" data-act="new">＋ 新增課程</button>${S.courses.length?`<button class="btn" data-act="csv-all">下載全部報名名單 CSV</button>`:""}</div>`;
+
+  const cs = sortedCourses();
+  const rows = cs.length ? cs.map(c=>{
+    const r = peopleFor(c), cap=Number(c.capacity)||0, ext=!!c.signupUrl, info=rosterInfo(c.id);
+    const nPend = r.filter(p=>!p.confirmed).length;
+    const del = S.confirmDel===c.id ? `<div class="confirm">刪除「${esc(c.title)}」？這堂課的 ${r.length} 筆報名紀錄、官方名單和圖片會一起刪除，無法復原。
+        <button class="btn danger" data-act="del-yes" data-id="${esc(c.id)}">確定刪除</button><button class="btn link" data-act="del-no">取消</button></div>` : "";
+    return `<section class="panel">
+      <div class="title-row" style="justify-content:space-between">
+        <div class="title-row"><h3 style="font-size:17px">${esc(c.title)}</h3>${c.status==="closed"?`<span class="pill closed">報名截止</span>`:""}</div>
+        <span class="seats"><span>已報名 <span class="num">${r.length}</span>${cap?` / <span class="num">${cap}</span>`:""} 人</span></span>
+      </div>
+      <div class="meta" style="margin:4px 0">${esc(c.date||"日期待定")} ${esc(c.time||"")} ${c.location?"· "+esc(c.location):""}</div>
+      ${ext?`<div class="ext" style="margin-bottom:4px">外部報名：<a href="${esc(c.signupUrl)}" target="_blank" rel="noopener noreferrer">${esc(c.signupUrl)}</a></div>
+        <div class="hint" style="margin-bottom:12px">${info?`官方名單 ${officialFor(c.id).length} 人，${fmtTime(info.importedAt)} 匯入`:"尚未匯入官方名單"}${nPend?` · <b style="color:var(--warn)">${nPend} 人自行回報、尚未在官方名單中找到</b>`:""}</div>`
+        :`<div style="margin-bottom:12px"></div>`}
+      ${r.length?`<div class="tbl"><table><thead><tr><th>#</th><th>業務單位</th><th>事業部</th><th>姓名</th><th>職稱</th>${ext?"<th>狀態</th>":""}<th>回報時間</th></tr></thead><tbody>
+        ${r.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.unit||"—")}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.title||"—")}</td>${ext?`<td><span class="pill ${p.src==="self"?"pending":"mine"}">${SRC_LABEL[p.src]}</span></td>`:""}<td class="t">${fmtTime(p.at)||"—"}</td></tr>`).join("")}
+      </tbody></table></div>`:`<p class="who" style="margin:0">尚無人報名</p>`}
+      ${S.importing===c.id?importBox(c):""}
+      <div class="actions" style="margin-top:12px">
+        ${ext&&S.importing!==c.id?`<button class="btn primary" data-act="imp-open" data-id="${esc(c.id)}">${info?"重新匯入官方名單":"匯入官方名單"}</button>`:""}
+        <button class="btn" data-act="edit" data-id="${esc(c.id)}">編輯</button>
+        <button class="btn" data-act="toggle" data-id="${esc(c.id)}">${c.status==="closed"?"重新開放報名":"截止報名"}</button>
+        ${r.length?`<button class="btn" data-act="csv" data-id="${esc(c.id)}">下載名單 CSV</button>`:""}
+        <button class="btn danger" data-act="del" data-id="${esc(c.id)}">刪除</button>
+      </div>${del}
+    </section>`;
+  }).join("") : (e?"":`<div class="empty"><strong>還沒有課程</strong>按「新增課程」建立第一堂，發布後同事立刻看得到。</div>`);
+  return form + rows;
+}
+
+/* 圖片上傳 */
+function uploadSlot(kind){
+  const id = S.draft[kind];
+  return (id?`<img src="${esc(blob(id))}" alt="">`:"")
+    + `<label class="btn">${id?"更換圖片":"上傳圖片"}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" data-kind="${kind}" hidden></label>`
+    + (id?`<button type="button" class="btn link" data-act="up-remove" data-kind="${kind}">移除</button>`:"")
+    + `<span class="err" id="st-${kind}"></span>`;
+}
+function startEdit(id){
+  const c = id==="new" ? {} : (S.courses.find(x=>x.id===id)||{});
+  S.editing=id; S.draft={poster:c.poster||"", payQr:c.payQr||""}; S.uploaded=[];
+}
+function dropImages(ids){ ids=[...new Set(ids.filter(Boolean))]; if(ids.length) api("admin/image/delete",{ids}).catch(()=>{}); }
+async function shrink(file){
+  if(file.size <= 900*1024 && /^image\/(jpeg|png|webp)$/.test(file.type)) return file;
+  const bmp = await createImageBitmap(file);
+  const max = 1600, scale = Math.min(1, max/Math.max(bmp.width, bmp.height));
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(bmp.width*scale); cv.height = Math.round(bmp.height*scale);
+  const ctx = cv.getContext("2d"); ctx.fillStyle="#fff"; ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.drawImage(bmp,0,0,cv.width,cv.height);
+  for(const q of [0.85,0.75,0.6]){
+    const b = await new Promise(r=>cv.toBlob(r,"image/jpeg",q));
+    if(b && b.size <= 1300*1024) return b;
+  }
+  throw {error:"too_large"};
+}
+async function uploadImg(kind, file){
+  const st = () => $("#st-"+kind);
+  if(!file) return;
+  if(!/^image\//.test(file.type)){ st().textContent="請選 JPG、PNG 或 WebP 圖片"; return; }
+  st().textContent="上傳中…";
+  try{
+    const b = await shrink(file);
+    const r = await api("admin/image", b);
+    S.uploaded.push(r.id); S.draft[kind]=r.id;
+    $("#slot-"+kind).innerHTML = uploadSlot(kind);
+  }catch(e){ const el=st(); if(el) el.textContent = errMsg(e); }
+}
+
+/* 官方名單匯入（文字 / CSV） */
+function importBox(c){
+  const rows = S.impRows;
+  let preview = "";
+  if(rows){
+    const self = rosterFor(c.id);
+    const hit = self.filter(p=>rows.some(o=>sameP(p,o))).length;
+    preview = `<div><b>辨識結果：${rows.length} 人</b>　<span class="who">與自行回報相符 ${hit} 人 · 自行回報但不在這份名單 ${self.length-hit} 人</span></div>
+      ${rows.length?`<div class="tbl"><table><thead><tr><th>#</th><th>業務單位</th><th>事業部</th><th>姓名</th><th>職稱</th><th></th></tr></thead><tbody>
+      ${rows.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.unit||"—")}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.title||"—")}</td><td><button type="button" class="x" data-act="imp-del" data-i="${i}" aria-label="刪除這一列">×</button></td></tr>`).join("")}
+      </tbody></table></div>`:""}
+      <p class="hint">請檢查結果，有誤的列可以按 × 刪除，或按「重新貼上」修改來源文字。</p>
+      ${rosterInfo(c.id)?`<div class="seg"><label><input type="radio" name="impMode" value="replace" ${S.impMode==="replace"?"checked":""}> 取代目前的官方名單</label><label><input type="radio" name="impMode" value="merge" ${S.impMode==="merge"?"checked":""}> 加入目前的官方名單（合併、去除重複）</label></div>`:""}
+      <div class="actions"><button class="btn primary" data-act="imp-save" data-id="${esc(c.id)}" ${S.impBusy||!rows.length?"disabled":""}>儲存並核對</button><button class="btn link" data-act="imp-reset">重新貼上</button><button class="btn link" data-act="imp-close">取消</button>
+      ${rosterInfo(c.id)?`<button class="btn link" data-act="imp-clear" data-id="${esc(c.id)}" style="color:var(--danger)">清除目前的官方名單</button>`:""}</div>`;
+  }
+  return `<div class="importbox" id="importBox">
+    <h4>匯入「${esc(c.title)}」的官方報名名單</h4>
+    ${rows?"":`<p class="hint">從 Google 表單回覆試算表、Excel 或 Email 複製名單貼在下面，第一列要是表頭（需有「姓名」欄，可另有業務單位、事業部、職稱），也可以上傳 CSV 檔。<br>手上只有截圖或照片：傳給 Claude，請它轉成文字後貼上。</p>
+    <label>名單文字<textarea id="imp-text" rows="7" placeholder="業務單位	事業部	姓名	職稱&#10;高雄	財富管理事業部	王小明	襄理">${esc(S.impText)}</textarea></label>
+    <div class="upl-row"><label class="btn">上傳 CSV / TXT<input type="file" id="imp-file" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden></label></div>
+    <div class="actions"><button class="btn primary" data-act="imp-run" data-id="${esc(c.id)}">辨識名單</button><button class="btn link" data-act="imp-close">取消</button><span class="err" id="imp-err"></span></div>`}
+    ${preview}
+  </div>`;
+}
+function cleanRows(arr){
+  const out=[];
+  for(const r of (Array.isArray(arr)?arr:[])){
+    const p = profileOf({unit:String(r?.unit??"").trim().slice(0,20), division:String(r?.division??"").trim().slice(0,30), name:String(r?.name??"").trim().slice(0,30), title:String(r?.title??"").trim().slice(0,20)});
+    if(p.name && !out.some(o=>sameP(o,p) && normUnit(o.unit)===normUnit(p.unit))) out.push(p);
+  }
+  return out;
+}
+function splitLine(l){
+  if(l.includes("\t")) return l.split("\t").map(s=>s.trim());
+  const out=[]; let cur="", q=false;
+  for(let i=0;i<l.length;i++){ const ch=l[i];
+    if(ch==='"'){ if(q && l[i+1]==='"'){ cur+='"'; i++; } else q=!q; }
+    else if(ch===',' && !q){ out.push(cur.trim()); cur=""; } else cur+=ch; }
+  out.push(cur.trim()); return out;
+}
+function localParse(text){
+  const lines = text.replace(/^﻿/,"").split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(!lines.length) return null;
+  const head = splitLine(lines[0]);
+  const col = re => head.findIndex(h=>re.test(h));
+  const ix = {name:col(/姓名|名字|^name$/i), unit:col(/業務單位|單位|據點|地區|分公司/), division:col(/事業部|部門/), title:col(/職稱|職位|職級/)};
+  if(ix.name>=0){
+    return lines.slice(1).map(l=>{ const f=splitLine(l); const g=k=>ix[k]>=0?(f[ix[k]]||""):""; return {unit:g("unit"),division:g("division"),name:g("name"),title:g("title")}; });
+  }
+  // 沒有表頭：4 欄當作 業務單位/事業部/姓名/職稱，1 欄當作姓名
+  const rows = lines.map(l=>l.includes("\t")||l.includes(",") ? splitLine(l) : l.split(/\s+/));
+  if(rows.every(f=>f.length===4)) return rows.map(f=>({unit:f[0],division:f[1],name:f[2],title:f[3]}));
+  if(rows.every(f=>f.length===1)) return rows.map(f=>({name:f[0]}));
+  return null;
+}
+
+/* ---------- 報名資料 ---------- */
+function renderProfilePanel(){
+  const p=$("#profilePanel");
+  const need = S.pendingJoin && !S.me;
+  if(!need && !S.editProfile){ p.hidden=true; p.innerHTML=""; p.dataset.open=""; return; }
+  if(p.dataset.open==="1") return;
+  p.dataset.open="1"; p.hidden=false;
+  const me = S.me || {};
+  const units = [...new Set(["高雄","北高",...S.signups.map(s=>s.unit).filter(Boolean)])];
+  const divs = [...new Set(S.signups.map(s=>s.division).filter(Boolean))];
+  p.innerHTML = `<section class="panel"><h2>我的報名資料</h2>
+    <p class="who" style="margin:0 0 12px">填一次就會記在這台裝置，之後報名自動帶入。換手機或電腦時，填一樣的業務單位和姓名就能看到自己的報名紀錄。名單會公開給同事看。</p>
+    <form id="profileForm"><div class="grid">
+      <label>業務單位 *<input id="p-unit" required maxlength="20" list="unitList" value="${esc(me.unit)}" placeholder="例如：高雄、北高"></label>
+      <label>事業部名稱 *<input id="p-division" required maxlength="30" list="divList" value="${esc(me.division)}"></label>
+      <label>姓名 *<input id="p-name" required maxlength="30" value="${esc(me.name)}"></label>
+      <label>職稱 *<input id="p-title" required maxlength="20" value="${esc(me.title)}" placeholder="例如：業務經理"></label>
+    </div>
+    <datalist id="unitList">${units.map(u=>`<option value="${esc(u)}">`).join("")}</datalist>
+    <datalist id="divList">${divs.map(u=>`<option value="${esc(u)}">`).join("")}</datalist>
+    <div class="form-foot"><span class="err" id="pErr"></span>
+      <button type="button" class="btn link" data-act="profile-cancel">取消</button>
+      <button type="submit" class="btn primary">${S.pendingJoin?"儲存並報名":"儲存"}</button></div></form></section>`;
+  setTimeout(()=>{ $("#p-unit")?.focus(); p.scrollIntoView({behavior:"smooth",block:"start"}); },0);
+}
+function closeProfile(){ S.editProfile=false; const p=$("#profilePanel"); p.dataset.open=""; }
+
+/* ---------- 動作 ---------- */
+async function join(cid){
+  const c = S.courses.find(x=>x.id===cid); if(!c || !S.me) return;
+  S.busy=true; render();
+  try{ await api("signup",{courseId:cid, profile:S.me}); toast((c.signupUrl?"已回報完成報名：":"報名成功：")+c.title); S.pendingJoin=null; }
+  catch(e){ toast(errMsg(e)); }
+  S.busy=false; await refresh();
+}
+async function leave(cid){
+  const c = S.courses.find(x=>x.id===cid);
+  S.busy=true; render();
+  try{ await api("unsignup",{courseId:cid, pkey:myKey()}); toast(c&&c.signupUrl?"已撤回回報":"已取消報名"); }
+  catch(e){ toast(errMsg(e)); }
+  S.busy=false; await refresh();
+}
+async function saveCourse(){
+  const v = id => $("#"+id).value.trim();
+  const title = v("f-title");
+  if(!title){ $("#formErr").textContent="請填寫課程名稱"; return; }
+  let signupUrl = v("f-url");
+  if(signupUrl){
+    if(!/^https?:\/\//i.test(signupUrl)) signupUrl = "https://" + signupUrl;
+    let ok=false; try{ const u=new URL(signupUrl); ok = /^https?:$/.test(u.protocol) && u.hostname.includes("."); }catch(e){}
+    if(!ok){ $("#formErr").textContent="報名連結看起來不是網址，請直接從瀏覽器網址列複製貼上"; $("#f-url").focus(); return; }
+  }
+  const course = { title, signupUrl, date:v("f-date"), time:v("f-time"), location:v("f-location"), instructor:v("f-instructor"),
+    capacity:Math.max(0, parseInt(v("f-capacity")||"0",10)||0), status:$("#f-status").value, summary:v("f-summary"),
+    detail:$("#f-detail").value.trim(), poster:S.draft.poster||"", payQr:S.draft.payQr||"", payNote:$("#f-paynote").value.trim() };
+  const old = S.editing==="new" ? {} : (S.courses.find(x=>x.id===S.editing)||{});
+  if(S.editing!=="new") course.id = S.editing;
+  const btn=$("#courseForm button[type=submit]"); if(btn) btn.disabled=true;
+  try{
+    await api("admin/course",{course});
+    toast(S.editing==="new"?"課程已發布":"已儲存");
+    const keep = new Set([course.poster, course.payQr]);
+    dropImages([old.poster, old.payQr, ...S.uploaded].filter(id=>id && !keep.has(id)));
+    S.editing=null; S.uploaded=[];
+  }catch(e){ $("#formErr").textContent = errMsg(e); if(btn) btn.disabled=false; if(e.error==="bad_key") adminLogout(); return; }
+  await refresh();
+}
+function csv(courses){
+  const q=s=>`"${String(s??"").replace(/"/g,'""')}"`;
+  const lines=[["課程","日期","業務單位","事業部名稱","姓名","職稱","狀態","回報時間"].map(q).join(",")];
+  for(const c of courses) for(const r of peopleFor(c)) lines.push([c.title,c.date,r.unit,r.division,r.name,r.title,SRC_LABEL[r.src],fmtTime(r.at)].map(q).join(","));
+  const url=URL.createObjectURL(new Blob(["﻿"+lines.join("\r\n")],{type:"text/csv"}));
+  const a=document.createElement("a"); a.href=url; a.download=(courses.length===1?courses[0].title:"全部課程")+"-報名名單.csv";
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function closeImport(){ S.importing=null; S.impRows=null; S.impText=""; S.impMode="replace"; }
+function adminLogout(){ S.adminKey=""; ss.del("cs-admin"); S.isOwner=false; S.editing=null; closeImport(); if(S.tab==="admin") S.tab="shelf"; render(); }
+
+document.addEventListener("click", async ev=>{
+  const tab = ev.target.closest("nav.tabs button");
+  if(tab){ S.tab=tab.dataset.tab; S.loginOpen=false; render(); return; }
+  const b = ev.target.closest("[data-act]"); if(!b) return;
+  const id=b.dataset.id, act=b.dataset.act;
+  if(act==="goto") gotoCourse(id);
+  else if(act==="join"){ S.pendingJoin=id; if(!S.me) closeProfile(); render(); }
+  else if(act==="join-yes") join(id);
+  else if(act==="join-no"){ S.pendingJoin=null; render(); }
+  else if(act==="leave") leave(id);
+  else if(act==="edit-profile"){ closeProfile(); S.editProfile=true; render(); }
+  else if(act==="profile-cancel"){ S.pendingJoin=null; closeProfile(); render(); }
+  else if(act==="admin-login"){ S.loginOpen=true; render(); setTimeout(()=>$("#l-key")?.focus(),0); window.scrollTo({top:0,behavior:"smooth"}); }
+  else if(act==="login-cancel"){ S.loginOpen=false; render(); }
+  else if(act==="admin-logout") adminLogout();
+  else if(act==="goto-new"){ S.tab="admin"; startEdit("new"); render(); }
+  else if(act==="new"){ startEdit("new"); render(); setTimeout(()=>$("#f-title")?.focus(),0); }
+  else if(act==="edit"){ startEdit(id); render(); window.scrollTo({top:0,behavior:"smooth"}); }
+  else if(act==="cancel-edit"){ dropImages(S.uploaded); S.uploaded=[]; S.editing=null; render(); }
+  else if(act==="up-remove"){ const k=b.dataset.kind; S.draft[k]=""; $("#slot-"+k).innerHTML=uploadSlot(k); }
+  else if(act==="zoom"){ $("#lightboxImg").src=b.dataset.src; $("#lightbox").hidden=false; }
+  else if(act==="zoom-close"){ $("#lightbox").hidden=true; $("#lightboxImg").removeAttribute("src"); }
+  else if(act==="del"){ S.confirmDel=id; render(); }
+  else if(act==="del-no"){ S.confirmDel=null; render(); }
+  else if(act==="del-yes"){ S.confirmDel=null; try{ await api("admin/course/delete",{id}); toast("課程已刪除"); }catch(e){ toast(errMsg(e)); } await refresh(); }
+  else if(act==="toggle"){ const c=S.courses.find(x=>x.id===id); if(c){ try{ await api("admin/course",{course:{...c, status:c.status==="closed"?"open":"closed"}}); toast(c.status==="closed"?"已重新開放報名":"已截止報名"); }catch(e){ toast(errMsg(e)); } await refresh(); } }
+  else if(act==="csv") csv([S.courses.find(x=>x.id===id)]);
+  else if(act==="csv-all") csv(sortedCourses());
+  else if(act==="imp-open"){ closeImport(); S.importing=id; render(); setTimeout(()=>{ $("#importBox")?.scrollIntoView({behavior:"smooth",block:"center"}); $("#imp-text")?.focus(); },0); }
+  else if(act==="imp-close"){ closeImport(); render(); }
+  else if(act==="imp-run"){
+    S.impText = $("#imp-text")?.value || "";
+    const rows = localParse(S.impText);
+    if(!rows){ $("#imp-err").textContent = S.impText.trim() ? "看不懂這份名單：請確認第一列是表頭，而且有「姓名」欄" : "請先貼上名單文字或上傳 CSV"; return; }
+    S.impRows = cleanRows(rows);
+    if(!S.impRows.length){ S.impRows=null; $("#imp-err").textContent="沒有找到任何姓名"; return; }
+    render();
+  }
+  else if(act==="imp-del"){ S.impRows.splice(Number(b.dataset.i),1); render(); }
+  else if(act==="imp-reset"){ S.impRows=null; render(); }
+  else if(act==="imp-save"){
+    const c=S.courses.find(x=>x.id===id); if(!c || S.impBusy) return;
+    let entries = S.impRows||[];
+    if(S.impMode==="merge" && rosterInfo(id)) entries = cleanRows([...officialFor(id), ...entries]);
+    S.impBusy=true; render();
+    try{
+      await api("admin/roster",{courseId:id, entries});
+      const hit = rosterFor(id).filter(p=>entries.some(o=>sameP(p,o))).length;
+      toast(`已匯入 ${entries.length} 人，與自行回報相符 ${hit} 人`); closeImport();
+    }catch(e){ toast(errMsg(e)); }
+    S.impBusy=false; await refresh();
+  }
+  else if(act==="imp-clear"){ try{ await api("admin/roster/delete",{courseId:id}); toast("已清除官方名單"); closeImport(); }catch(e){ toast(errMsg(e)); } await refresh(); }
+});
+document.addEventListener("change", ev=>{
+  const inp = ev.target.closest("input[type=file][data-kind]");
+  if(inp){ uploadImg(inp.dataset.kind, inp.files && inp.files[0]); inp.value=""; return; }
+  if(ev.target.name==="impMode"){ S.impMode=ev.target.value; return; }
+  if(ev.target.id==="imp-file"){
+    const f=ev.target.files && ev.target.files[0]; if(!f) return;
+    const r=new FileReader();
+    r.onload=()=>{ const ta=$("#imp-text"); const t=String(r.result||"").replace(/^﻿/,""); if(ta) ta.value = ta.value.trim() ? ta.value.trim()+"\n"+t : t; };
+    r.onerror=()=>toast("讀不到這個檔案；Excel 檔請先另存成 CSV");
+    r.readAsText(f); ev.target.value="";
+  }
+});
+document.addEventListener("keydown", ev=>{ if(ev.key==="Escape" && !$("#lightbox").hidden) $("#lightbox").hidden=true; });
+document.addEventListener("submit", async ev=>{
+  ev.preventDefault();
+  const f = ev.target;
+  if(f.id==="courseForm") return saveCourse();
+  if(f.id==="loginForm"){
+    const key = $("#l-key").value;
+    try{ await api("admin/check",{}, {key}); S.adminKey=key; ss.set("cs-admin",key); S.isOwner=true; S.loginOpen=false; S.tab="admin"; render(); toast("已登入課程管理"); }
+    catch(e){ $("#lErr").textContent = e.error==="bad_key" ? "密碼不對" : errMsg(e); }
+    return;
+  }
+  if(f.id==="profileForm"){
+    const pf={}; for(const k of PF) pf[k]=$("#p-"+k).value.trim();
+    const miss=PF.find(k=>!pf[k]);
+    if(miss){ $("#pErr").textContent="請填寫"+PF_LABEL[miss]; $("#p-"+miss).focus(); return; }
+    const oldKey = myKey();
+    const hadAny = oldKey && S.signups.some(s=>s.pkey===oldKey);
+    S.me = profileOf(pf); ls.set("cs-profile", JSON.stringify(S.me));
+    const pending = S.pendingJoin;
+    closeProfile();
+    if(hadAny){ try{ await api("profile",{oldKey, profile:S.me}); }catch(e){} }
+    if(pending){ S.pendingJoin=pending; await join(pending); }
+    else { toast("已儲存報名資料"); await refresh(); }
+  }
+});
+
+/* ---------- 啟動 ---------- */
+(async()=>{
+  render();
+  if(S.adminKey){ try{ await api("admin/check",{}); S.isOwner=true; }catch(e){ S.adminKey=""; ss.del("cs-admin"); } }
+  await refresh();
+  const h = (location.hash||"").slice(1);
+  if(h==="admin" && !S.isOwner){ S.loginOpen=true; render(); }
+  else if(h.startsWith("c-") && S.courses.some(c=>"c-"+c.id===h)) setTimeout(()=>gotoCourse(h.slice(2)),50);
+  setInterval(()=>{ if(document.visibilityState==="visible" && !S.busy) refresh(true); }, 20000);
+  document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible" && S.loaded) refresh(true); });
+})();
