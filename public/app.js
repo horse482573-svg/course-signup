@@ -85,8 +85,9 @@ function sameP(a,b){
   const da=normUnit(a.division), db=normUnit(b.division);
   return !da || !db || da===db || da.includes(db) || db.includes(da);
 }
-const entryOf = o => ({...profileOf(o), meal:o?.meal||"", drink:o?.drink||""});
+const entryOf = o => ({...profileOf(o), meal:o?.meal||"", drink:o?.drink||"", award:o?.award||""});
 const isMeal = c => c && c.kind==="meal";
+const isAward = c => c && c.kind==="award";
 function myMeal(c){ if(!isMeal(c) || !S.me) return null; return officialFor(c.id).find(o=>sameP(S.me,o)) || null; }
 const officialFor = cid => (S.rosters[cid] && S.rosters[cid].entries) || [];
 const rosterInfo = cid => S.rosters[cid] || null;
@@ -114,12 +115,14 @@ function myState(c){
   return (info && String(info.importedAt||"") > String(rec.at||"")) ? "missing" : "pending";
 }
 function isMine(cid){ const c=S.courses.find(x=>x.id===cid); return !!(c && myState(c)); }
-const sortedCourses = () => [...S.courses].sort((a,b)=>String(a.date||"9999").localeCompare(String(b.date||"9999")));
+const sortedAwards = () => S.courses.filter(isAward).sort((a,b)=>awardRank(a)-awardRank(b) || String(a.endDate||a.date||"").localeCompare(String(b.endDate||b.date||"")));
+const sortedCourses = () => [...S.courses].filter(c=>!isAward(c)).sort((a,b)=>String(a.date||"9999").localeCompare(String(b.date||"9999")));
 
 /* ---------- render ---------- */
 function render(soft){
-  $("#n-all").textContent = S.courses.length;
-  $("#n-mine").textContent = S.courses.filter(c=>isMine(c.id)).length;
+  $("#n-all").textContent = sortedCourses().length;
+  $("#n-mine").textContent = sortedCourses().filter(c=>isMine(c.id)).length;
+  $("#n-award").textContent = sortedAwards().length;
   $("#tab-admin").hidden = !S.isOwner;
   if(S.tab==="admin" && !S.isOwner) S.tab="shelf";
   document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===S.tab && !S.loginOpen)));
@@ -134,6 +137,7 @@ function render(soft){
     v.innerHTML = adminView();
   }
   else if(S.tab==="shelf") v.innerHTML = shelfView();
+  else if(S.tab==="award") v.innerHTML = awardView();
   else v.innerHTML = listView(S.tab==="mine");
 }
 function renderWho(){
@@ -277,6 +281,58 @@ function tallyHTML(list){
   return a||b ? `<div class="tallies">${a}${b}</div>` : `<p class="hint">匯入含「早餐」「飲料」欄的名單後，這裡會自動統計訂餐數量。</p>`;
 }
 
+/* ---------- 公司獎勵總覽 ---------- */
+function awardStatus(a){
+  const t = today(), s = a.date||"", e = a.endDate||"";
+  if(s && t < s) return {key:"soon", label:"即將開始"};
+  if(e && t > e) return {key:"ended", label:"已結束"};
+  return {key:"on", label:"進行中"};
+}
+function awardRank(a){ return {on:0, soon:1, ended:2}[awardStatus(a).key]; }
+function fmtDay(d){ if(!d) return ""; const x=new Date(d+"T00:00:00"); return `${x.getFullYear()}/${x.getMonth()+1}/${x.getDate()}（${WD[x.getDay()]}）`; }
+function daysLeft(e){ if(!e) return null; const a=new Date(today()+"T00:00:00"), b=new Date(e+"T00:00:00"); return Math.round((b-a)/86400000); }
+function myAwards(a){ if(!S.me) return []; return officialFor(a.id).filter(o=>sameP(S.me,o)); }
+function awardCard(a){
+  const st = awardStatus(a), list = officialFor(a.id), info = rosterInfo(a.id), mine = myAwards(a), k = S.me ? S.me : null;
+  const left = daysLeft(a.endDate);
+  const period = (a.date||a.endDate) ? `${fmtDay(a.date)||"即日起"} – ${fmtDay(a.endDate)||"另行公告"}` : "請見注意事項";
+  const counts = new Map(); for(const p of list){ const v=(p.award||"").trim(); if(v) counts.set(v,(counts.get(v)||0)+1); }
+  let me = "";
+  if(mine.length) me = `<div class="mealbox award-me"><span class="mealbox-h">恭喜你已達成</span><div class="award-me-list">${mine.map(m=>`<b>${esc(m.award||"本獎勵")}</b>`).join("")}</div></div>`;
+  else if(!S.me) me = `<div class="mealbox"><span class="who">點右上角「填寫我的報名資料」，就能看到你是否已達成這個獎勵。</span></div>`;
+  else if(info && st.key!=="soon") me = `<div class="mealbox"><span class="who">目前名單上還沒有你${st.key==="on"?"，繼續加油！":"。"}</span></div>`;
+  return `<article class="award${st.key==="ended"?" past":""}" id="a-${esc(a.id)}">
+    ${a.poster?`<button type="button" class="award-poster" data-act="zoom" data-src="${esc(blob(a.poster))}" aria-label="放大獎勵海報"><img src="${esc(blob(a.poster))}" alt="${esc(a.title)} 海報" loading="lazy"></button>`
+      :`<div class="award-poster ph-award"><span>${esc(a.title)}</span></div>`}
+    <div class="award-body">
+      <div class="title-row"><h3>${esc(a.title)}</h3><span class="pill ${st.key==="on"?"mine":st.key==="soon"?"pending":"closed"}">${st.label}</span></div>
+      <div class="award-period"><small>獎勵期間</small><b>${esc(period)}</b>${st.key==="on"&&left!==null&&left>=0?`<span class="who">${left===0?"今天截止":`還有 ${left} 天`}</span>`:""}</div>
+      ${a.summary?`<p class="summary">${esc(a.summary)}</p>`:""}
+      ${me}
+      ${a.detail?`<div class="award-notes"><h4>獎勵注意事項</h4><p>${esc(a.detail)}</p></div>`:""}
+      <div class="roster">
+        <h4>目前達成名單 · ${list.length} 人${info?` · ${fmtTime(info.importedAt)} 更新`:""}</h4>
+        ${counts.size>1?`<div class="chips" style="margin-bottom:8px">${[...counts].map(([n,c])=>`<span class="chip">${esc(n)}<small>${c} 人</small></span>`).join("")}</div>`:""}
+        ${list.length?`<div class="tbl"><table><thead><tr><th>#</th><th>事業部</th><th>姓名</th><th>達成獎勵</th></tr></thead><tbody>
+          ${list.map((p,i)=>`<tr class="${k&&sameP(k,p)?"row-me":""}"><td class="t">${i+1}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.award||"—")}</td></tr>`).join("")}
+        </tbody></table></div>`:`<span class="who">${st.key==="soon"?"獎勵尚未開始。":"名單整理中，公布後會顯示在這裡。"}</span>`}
+      </div>
+    </div>
+  </article>`;
+}
+function awardView(){
+  const as = sortedAwards();
+  const head = `<div class="award-head"><h2>公司獎勵總覽</h2><span class="who">獎勵期間、注意事項與目前達成名單</span></div>`;
+  if(!as.length) return head + `<div class="empty"><strong>目前沒有公布中的獎勵</strong>${S.isOwner?"到「課程管理」按「新增獎勵」建立第一個。":"公司獎勵公布後會出現在這裡。"}</div>`;
+  return head + `<div class="list">${as.map(awardCard).join("")}</div>`;
+}
+function gotoAward(id){
+  S.tab="award"; S.loginOpen=false; render();
+  try{ history.replaceState(null,"","#a-"+id); }catch(e){}
+  const el = document.getElementById("a-"+id); if(!el) return;
+  el.scrollIntoView({block:"start"}); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+}
+
 function listView(onlyMine){
   let cs = sortedCourses();
   if(onlyMine) cs = cs.filter(c=>isMine(c.id));
@@ -298,10 +354,51 @@ function loginView(){
     <form id="loginForm"><label>管理密碼<input id="l-key" type="password" autocomplete="current-password"></label>
     <div class="form-foot"><span class="err" id="lErr"></span><button type="button" class="btn link" data-act="login-cancel">取消</button><button type="submit" class="btn primary">登入</button></div></form></section>`;
 }
+function awardForm(c, e){
+  return `<section class="panel">
+    <h2>${e==="new"?"新增公司獎勵":"編輯公司獎勵"}</h2>
+    <form id="courseForm">
+      <div class="grid">
+        <label class="full">獎勵名稱 *<input id="f-title" required maxlength="80" value="${esc(c.title)}" placeholder="例如：2026 第四季業績衝刺獎勵"></label>
+        <label>獎勵期間（開始）<input id="f-date" type="date" value="${esc(c.date)}"></label>
+        <label>獎勵期間（結束）<input id="f-end" type="date" value="${esc(c.endDate)}"></label>
+        <label class="full">一句話簡介<input id="f-summary" maxlength="140" value="${esc(c.summary)}" placeholder="例如：期間內 FYC 達 30 萬即可獲得海外旅遊"></label>
+        <label class="full">獎勵注意事項<textarea id="f-detail" maxlength="3000" rows="8" placeholder="獎勵辦法、計算方式、發放時間、資格限制…">${esc(c.detail)}</textarea></label>
+        <div class="full upl"><span>獎勵海報（JPG、PNG、WebP；大圖會自動壓縮）</span><div class="upl-row" id="slot-poster">${uploadSlot("poster")}</div></div>
+      </div>
+      <div class="form-foot"><span class="err" id="formErr"></span>
+        <button type="button" class="btn link" data-act="cancel-edit">取消</button>
+        <button type="submit" class="btn primary" ${S.busy?"disabled":""}>${e==="new"?"發布獎勵":"儲存變更"}</button>
+      </div>
+    </form></section>`;
+}
+function awardAdminRow(a){
+  const list = officialFor(a.id), info = rosterInfo(a.id), st = awardStatus(a);
+  const del = S.confirmDel===a.id ? `<div class="confirm">刪除「${esc(a.title)}」？達成名單會一起刪除，無法復原。
+      <button class="btn danger" data-act="del-yes" data-id="${esc(a.id)}">確定刪除</button><button class="btn link" data-act="del-no">取消</button></div>` : "";
+  return `<section class="panel">
+    <div class="title-row" style="justify-content:space-between">
+      <div class="title-row"><h3 style="font-size:17px">${esc(a.title)}</h3><span class="pill ${st.key==="on"?"mine":st.key==="soon"?"pending":"closed"}">${st.label}</span></div>
+      <span class="seats"><span>已達成 <span class="num">${list.length}</span> 人</span></span>
+    </div>
+    <div class="meta" style="margin:4px 0 12px">獎勵期間：${esc(fmtDay(a.date)||"即日起")} – ${esc(fmtDay(a.endDate)||"另行公告")}${info?` · 名單 ${fmtTime(info.importedAt)} 匯入`:" · 尚未匯入達成名單"}</div>
+    ${list.length?`<div class="tbl"><table><thead><tr><th>#</th><th>事業部</th><th>姓名</th><th>達成獎勵</th></tr></thead><tbody>
+      ${list.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.award||"—")}</td></tr>`).join("")}
+    </tbody></table></div>`:""}
+    ${S.importing===a.id?importBox(a):""}
+    <div class="actions" style="margin-top:12px">
+      ${S.importing!==a.id?`<button class="btn primary" data-act="imp-open" data-id="${esc(a.id)}">${info?"更新達成名單":"匯入達成名單"}</button>`:""}
+      <button class="btn" data-act="edit" data-id="${esc(a.id)}">編輯</button>
+      ${list.length?`<button class="btn" data-act="csv" data-id="${esc(a.id)}">下載名單 CSV</button>`:""}
+      <button class="btn link" data-act="goto-award" data-id="${esc(a.id)}">查看同事看到的畫面</button>
+      <button class="btn danger" data-act="del" data-id="${esc(a.id)}">刪除</button>
+    </div>${del}
+  </section>`;
+}
 function adminView(){
   const e = S.editing;
   const c = e && e!=="new" ? (S.courses.find(x=>x.id===e)||{}) : {};
-  const form = e ? `<section class="panel">
+  const form = e && S.editKind==="award" ? awardForm(c, e) : e ? `<section class="panel">
     <h2>${e==="new"?"新增課程":"編輯課程"}</h2>
     <form id="courseForm">
       <div class="grid">
@@ -328,7 +425,7 @@ function adminView(){
         <button type="submit" class="btn primary" ${S.busy?"disabled":""}>${e==="new"?"發布課程":"儲存變更"}</button>
       </div>
     </form></section>`
-    : `<div class="actions" style="margin-bottom:16px"><button class="btn primary" data-act="new">＋ 新增課程</button>${S.courses.length?`<button class="btn" data-act="csv-all">下載全部報名名單 CSV</button>`:""}</div>`;
+    : `<div class="actions" style="margin-bottom:16px"><button class="btn primary" data-act="new">＋ 新增課程</button><button class="btn primary" data-act="new-award">＋ 新增獎勵</button>${S.courses.length?`<button class="btn" data-act="csv-all">下載全部報名名單 CSV</button>`:""}</div>`;
 
   const cs = sortedCourses();
   const rows = cs.length ? cs.map(c=>{
@@ -359,7 +456,9 @@ function adminView(){
       </div>${del}
     </section>`;
   }).join("") : (e?"":`<div class="empty"><strong>還沒有課程</strong>按「新增課程」建立第一堂，發布後同事立刻看得到。</div>`);
-  return form + rows;
+  const as = sortedAwards();
+  const awards = as.length ? `<h2 class="shelf-h">公司獎勵</h2>` + as.map(awardAdminRow).join("") : "";
+  return form + rows + awards;
 }
 
 /* 圖片上傳 */
@@ -370,8 +469,9 @@ function uploadSlot(kind){
     + (id?`<button type="button" class="btn link" data-act="up-remove" data-kind="${kind}">移除</button>`:"")
     + `<span class="err" id="st-${kind}"></span>`;
 }
-function startEdit(id){
+function startEdit(id, kind){
   const c = id==="new" ? {} : (S.courses.find(x=>x.id===id)||{});
+  S.editKind = id==="new" ? (kind||"course") : (isAward(c) ? "award" : "course");
   S.editing=id; S.draft={poster:c.poster||"", payQr:c.payQr||""}; S.uploaded=[];
 }
 function dropImages(ids){ ids=[...new Set(ids.filter(Boolean))]; if(ids.length) api("admin/image/delete",{ids}).catch(()=>{}); }
@@ -409,20 +509,25 @@ function importBox(c){
   if(rows){
     const self = rosterFor(c.id);
     const hit = self.filter(p=>rows.some(o=>sameP(p,o))).length;
-    preview = `<div><b>辨識結果：${rows.length} 人</b>　<span class="who">與自行回報相符 ${hit} 人 · 自行回報但不在這份名單 ${self.length-hit} 人</span></div>
+    if(isAward(c)) preview = `<div><b>辨識結果：${rows.length} 人</b></div>
+      ${rows.length?`<div class="tbl"><table><thead><tr><th>#</th><th>事業部</th><th>姓名</th><th>達成獎勵</th><th></th></tr></thead><tbody>
+      ${rows.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.award||"—")}</td><td><button type="button" class="x" data-act="imp-del" data-i="${i}" aria-label="刪除這一列">×</button></td></tr>`).join("")}
+      </tbody></table></div>`:""}`;
+    else preview = `<div><b>辨識結果：${rows.length} 人</b>　<span class="who">與自行回報相符 ${hit} 人 · 自行回報但不在這份名單 ${self.length-hit} 人</span></div>
       ${rows.length?`<div class="tbl"><table><thead><tr><th>#</th><th>業務單位</th><th>事業部</th><th>姓名</th><th>職稱</th>${isMeal(c)?"<th>早餐</th><th>飲料</th>":""}<th></th></tr></thead><tbody>
       ${rows.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.unit||"—")}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.title||"—")}</td>${isMeal(c)?`<td>${esc(p.meal||"—")}</td><td>${esc(p.drink||"—")}</td>`:""}<td><button type="button" class="x" data-act="imp-del" data-i="${i}" aria-label="刪除這一列">×</button></td></tr>`).join("")}
       </tbody></table></div>`:""}
-      ${isMeal(c)?tallyHTML(rows):""}
+      ${isMeal(c)?tallyHTML(rows):""}`;
+    preview += `
       <p class="hint">請檢查結果，有誤的列可以按 × 刪除，或按「重新貼上」修改來源文字。</p>
-      ${rosterInfo(c.id)?`<div class="seg"><label><input type="radio" name="impMode" value="replace" ${S.impMode==="replace"?"checked":""}> 取代目前的官方名單</label><label><input type="radio" name="impMode" value="merge" ${S.impMode==="merge"?"checked":""}> 加入目前的官方名單（合併、去除重複）</label></div>`:""}
-      <div class="actions"><button class="btn primary" data-act="imp-save" data-id="${esc(c.id)}" ${S.impBusy||!rows.length?"disabled":""}>儲存並核對</button><button class="btn link" data-act="imp-reset">重新貼上</button><button class="btn link" data-act="imp-close">取消</button>
-      ${rosterInfo(c.id)?`<button class="btn link" data-act="imp-clear" data-id="${esc(c.id)}" style="color:var(--danger)">清除目前的官方名單</button>`:""}</div>`;
+      ${rosterInfo(c.id)?`<div class="seg"><label><input type="radio" name="impMode" value="replace" ${S.impMode==="replace"?"checked":""}> 取代目前的${isAward(c)?"達成":"官方"}名單</label><label><input type="radio" name="impMode" value="merge" ${S.impMode==="merge"?"checked":""}> 加入目前的${isAward(c)?"達成":"官方"}名單（合併、去除重複）</label></div>`:""}
+      <div class="actions"><button class="btn primary" data-act="imp-save" data-id="${esc(c.id)}" ${S.impBusy||!rows.length?"disabled":""}>${isAward(c)?"儲存名單":"儲存並核對"}</button><button class="btn link" data-act="imp-reset">重新貼上</button><button class="btn link" data-act="imp-close">取消</button>
+      ${rosterInfo(c.id)?`<button class="btn link" data-act="imp-clear" data-id="${esc(c.id)}" style="color:var(--danger)">清除目前的${isAward(c)?"達成":"官方"}名單</button>`:""}</div>`;
   }
   return `<div class="importbox" id="importBox">
-    <h4>匯入「${esc(c.title)}」的官方報名名單</h4>
-    ${rows?"":`<p class="hint">從 Google 表單回覆試算表、Excel 或 Email 複製名單貼在下面，第一列要是表頭（需有「姓名」欄，可另有業務單位、事業部、職稱${isMeal(c)?"，以及「早餐」「飲料」欄":""}），也可以上傳 CSV 檔。<br>手上只有截圖或照片：傳給 Claude，請它轉成文字後貼上。</p>
-    <label>名單文字<textarea id="imp-text" rows="7" placeholder="${isMeal(c)?"事業部	姓名	早餐選項	飲料選項&#10;財富管理事業部	王小明	摩絲炸蝦堡	拿鐵中杯(無糖)":"業務單位	事業部	姓名	職稱&#10;高雄	財富管理事業部	王小明	襄理"}">${esc(S.impText)}</textarea></label>
+    <h4>匯入「${esc(c.title)}」的${isAward(c)?"達成名單":"官方報名名單"}</h4>
+    ${rows?"":`<p class="hint">${isAward(c)?"從 Excel 或 Email 複製達成名單貼在下面，第一列要是表頭：「事業部」「姓名」「達成獎勵」，也可以上傳 CSV 檔。":`從 Google 表單回覆試算表、Excel 或 Email 複製名單貼在下面，第一列要是表頭（需有「姓名」欄，可另有業務單位、事業部、職稱${isMeal(c)?"，以及「早餐」「飲料」欄":""}），也可以上傳 CSV 檔。`}<br>手上只有截圖或照片：傳給 Claude，請它轉成文字後貼上。</p>
+    <label>名單文字<textarea id="imp-text" rows="7" placeholder="${isAward(c)?"事業部	姓名	達成獎勵&#10;財富管理事業部	王小明	海外旅遊（雙人）":isMeal(c)?"事業部	姓名	早餐選項	飲料選項&#10;財富管理事業部	王小明	摩絲炸蝦堡	拿鐵中杯(無糖)":"業務單位	事業部	姓名	職稱&#10;高雄	財富管理事業部	王小明	襄理"}">${esc(S.impText)}</textarea></label>
     <div class="upl-row"><label class="btn">上傳 CSV / TXT<input type="file" id="imp-file" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden></label></div>
     <div class="actions"><button class="btn primary" data-act="imp-run" data-id="${esc(c.id)}">辨識名單</button><button class="btn link" data-act="imp-close">取消</button><span class="err" id="imp-err"></span></div>`}
     ${preview}
@@ -432,7 +537,7 @@ function cleanRows(arr){
   const out=[]; let anon=0;
   for(const r of (Array.isArray(arr)?arr:[])){
     const p = entryOf({unit:String(r?.unit??"").trim().slice(0,20), division:String(r?.division??"").trim().slice(0,30), name:String(r?.name??"").trim().slice(0,30), title:String(r?.title??"").trim().slice(0,20),
-      meal:String(r?.meal??"").trim().slice(0,60), drink:String(r?.drink??"").trim().slice(0,40)});
+      meal:String(r?.meal??"").trim().slice(0,60), drink:String(r?.drink??"").trim().slice(0,40), award:String(r?.award??"").trim().slice(0,80)});
     if(!p.name && (p.meal||p.drink)){ anon++; p.name="未具名"+anon; }
     if(p.name && !out.some(o=>sameP(o,p) && normUnit(o.division)===normUnit(p.division))) out.push(p);
   }
@@ -451,9 +556,9 @@ function localParse(text){
   if(!lines.length) return null;
   const head = splitLine(lines[0]);
   const col = re => head.findIndex(h=>re.test(h));
-  const ix = {name:col(/姓名|名字|^name$/i), unit:col(/業務單位|單位|據點|地區|分公司/), division:col(/事業部|部門/), title:col(/職稱|職位|職級/), meal:col(/早餐|餐點|主餐/), drink:col(/飲料|飲品/)};
+  const ix = {name:col(/姓名|名字|^name$/i), unit:col(/業務單位|單位|據點|地區|分公司/), division:col(/事業部|部門/), title:col(/職稱|職位|職級/), meal:col(/早餐|餐點|主餐/), drink:col(/飲料|飲品/), award:col(/達成|獎勵|獎項/)};
   if(ix.name>=0){
-    return lines.slice(1).map(l=>{ const f=splitLine(l); const g=k=>ix[k]>=0?(f[ix[k]]||""):""; return {unit:g("unit"),division:g("division"),name:g("name"),title:g("title"),meal:g("meal"),drink:g("drink")}; });
+    return lines.slice(1).map(l=>{ const f=splitLine(l); const g=k=>ix[k]>=0?(f[ix[k]]||""):""; return {unit:g("unit"),division:g("division"),name:g("name"),title:g("title"),meal:g("meal"),drink:g("drink"),award:g("award")}; });
   }
   // 沒有表頭：4 欄當作 業務單位/事業部/姓名/職稱，1 欄當作姓名
   const rows = lines.map(l=>l.includes("\t")||l.includes(",") ? splitLine(l) : l.split(/\s+/));
@@ -507,6 +612,7 @@ async function leave(cid){
 async function saveCourse(){
   const v = id => $("#"+id).value.trim();
   const title = v("f-title");
+  if(S.editKind==="award") return saveAward(v, title);
   if(!title){ $("#formErr").textContent="請填寫課程名稱"; return; }
   let signupUrl = v("f-url");
   if(signupUrl){
@@ -529,10 +635,26 @@ async function saveCourse(){
   }catch(e){ $("#formErr").textContent = errMsg(e); if(btn) btn.disabled=false; if(e.error==="bad_key") adminLogout(); return; }
   await refresh();
 }
+async function saveAward(v, title){
+  if(!title){ $("#formErr").textContent="請填寫獎勵名稱"; return; }
+  const date=v("f-date"), endDate=v("f-end");
+  if(date && endDate && endDate<date){ $("#formErr").textContent="結束日期不能早於開始日期"; return; }
+  const course = { title, kind:"award", date, endDate, summary:v("f-summary"), detail:$("#f-detail").value.trim(), poster:S.draft.poster||"", status:"open" };
+  const old = S.editing==="new" ? {} : (S.courses.find(x=>x.id===S.editing)||{});
+  if(S.editing!=="new") course.id = S.editing;
+  const btn=$("#courseForm button[type=submit]"); if(btn) btn.disabled=true;
+  try{
+    await api("admin/course",{course});
+    toast(S.editing==="new"?"獎勵已發布":"已儲存");
+    dropImages([old.poster, ...S.uploaded].filter(id=>id && id!==course.poster));
+    S.editing=null; S.uploaded=[];
+  }catch(e){ $("#formErr").textContent = errMsg(e); if(btn) btn.disabled=false; if(e.error==="bad_key") adminLogout(); return; }
+  await refresh();
+}
 function csv(courses){
   const q=s=>`"${String(s??"").replace(/"/g,'""')}"`;
-  const lines=[["課程","日期","業務單位","事業部名稱","姓名","職稱","早餐","飲料","狀態","回報時間"].map(q).join(",")];
-  for(const c of courses) for(const r of peopleFor(c)) lines.push([c.title,c.date,r.unit,r.division,r.name,r.title,r.meal||"",r.drink||"",SRC_LABEL[r.src],fmtTime(r.at)].map(q).join(","));
+  const lines=[["課程","日期","業務單位","事業部名稱","姓名","職稱","早餐","飲料","達成獎勵","狀態","回報時間"].map(q).join(",")];
+  for(const c of courses) for(const r of peopleFor(c)) lines.push([c.title,c.date,r.unit,r.division,r.name,r.title,r.meal||"",r.drink||"",r.award||"",SRC_LABEL[r.src],fmtTime(r.at)].map(q).join(","));
   const url=URL.createObjectURL(new Blob(["﻿"+lines.join("\r\n")],{type:"text/csv"}));
   const a=document.createElement("a"); a.href=url; a.download=(courses.length===1?courses[0].title:"全部課程")+"-報名名單.csv";
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -556,6 +678,8 @@ document.addEventListener("click", async ev=>{
   else if(act==="login-cancel"){ S.loginOpen=false; render(); }
   else if(act==="admin-logout") adminLogout();
   else if(act==="goto-new"){ S.tab="admin"; startEdit("new"); render(); }
+  else if(act==="new-award"){ startEdit("new","award"); render(); setTimeout(()=>$("#f-title")?.focus(),0); }
+  else if(act==="goto-award") gotoAward(id);
   else if(act==="new"){ startEdit("new"); render(); setTimeout(()=>$("#f-title")?.focus(),0); }
   else if(act==="edit"){ startEdit(id); render(); window.scrollTo({top:0,behavior:"smooth"}); }
   else if(act==="cancel-edit"){ dropImages(S.uploaded); S.uploaded=[]; S.editing=null; render(); }
@@ -639,6 +763,8 @@ document.addEventListener("submit", async ev=>{
   await refresh();
   const h = (location.hash||"").slice(1);
   if(h==="admin" && !S.isOwner){ S.loginOpen=true; render(); }
+  else if(h==="awards"){ S.tab="award"; render(); }
+  else if(h.startsWith("a-") && S.courses.some(c=>"a-"+c.id===h)) setTimeout(()=>gotoAward(h.slice(2)),50);
   else if(h.startsWith("c-") && S.courses.some(c=>"c-"+c.id===h)) setTimeout(()=>gotoCourse(h.slice(2)),50);
   setInterval(()=>{ if(document.visibilityState==="visible" && !S.busy) refresh(true); }, 20000);
   document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible" && S.loaded) refresh(true); });

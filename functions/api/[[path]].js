@@ -17,19 +17,20 @@ function cleanProfile(p) {
   p = p || {};
   return { unit: str(p.unit, 20), division: str(p.division, 30), name: str(p.name, 30), title: str(p.title, 20) };
 }
-const cleanEntry = p => ({ ...cleanProfile(p), meal: str(p?.meal, 60), drink: str(p?.drink, 40) });
+const cleanEntry = p => ({ ...cleanProfile(p), meal: str(p?.meal, 60), drink: str(p?.drink, 40), award: str(p?.award, 80) });
 const profileOk = p => p.unit && p.division && p.name && p.title;
 
 const COURSE_FIELDS = {
   title: 80, signupUrl: 2000, date: 10, time: 40, location: 60, instructor: 40, status: 10,
-  summary: 140, detail: 3000, poster: 40, payQr: 40, payNote: 1000, kind: 10,
+  summary: 140, detail: 3000, poster: 40, payQr: 40, payNote: 1000, kind: 10, endDate: 10,
 };
 function cleanCourse(c) {
   const o = {};
   for (const [k, n] of Object.entries(COURSE_FIELDS)) o[k] = str(c?.[k], n);
   o.capacity = Math.max(0, Math.min(100000, parseInt(c?.capacity, 10) || 0));
   if (o.status !== "closed") o.status = "open";
-  if (o.kind !== "meal") o.kind = "general";
+  if (o.kind !== "meal" && o.kind !== "award") o.kind = "general";
+  if (o.endDate && !/^\d{4}-\d{2}-\d{2}$/.test(o.endDate)) o.endDate = "";
   if (o.date && !/^\d{4}-\d{2}-\d{2}$/.test(o.date)) o.date = "";
   if (o.signupUrl && !/^https?:\/\//i.test(o.signupUrl)) o.signupUrl = "";
   return o;
