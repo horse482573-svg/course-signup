@@ -36,7 +36,7 @@ const ALLOW_ONSITE = false;
 const $ = s => document.querySelector(s);
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const WD = ["日","一","二","三","四","五","六"];
-const blob = id => "/api/image/" + encodeURIComponent(id);
+const blob = id => /^(\/|https?:)/.test(id) ? id : "/api/image/" + encodeURIComponent(id);
 
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast.h); toast.h=setTimeout(()=>t.hidden=true,2600); }
 function today(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
