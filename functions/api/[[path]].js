@@ -17,17 +17,19 @@ function cleanProfile(p) {
   p = p || {};
   return { unit: str(p.unit, 20), division: str(p.division, 30), name: str(p.name, 30), title: str(p.title, 20) };
 }
+const cleanEntry = p => ({ ...cleanProfile(p), meal: str(p?.meal, 60), drink: str(p?.drink, 40) });
 const profileOk = p => p.unit && p.division && p.name && p.title;
 
 const COURSE_FIELDS = {
   title: 80, signupUrl: 2000, date: 10, time: 40, location: 60, instructor: 40, status: 10,
-  summary: 140, detail: 3000, poster: 40, payQr: 40, payNote: 1000,
+  summary: 140, detail: 3000, poster: 40, payQr: 40, payNote: 1000, kind: 10,
 };
 function cleanCourse(c) {
   const o = {};
   for (const [k, n] of Object.entries(COURSE_FIELDS)) o[k] = str(c?.[k], n);
   o.capacity = Math.max(0, Math.min(100000, parseInt(c?.capacity, 10) || 0));
   if (o.status !== "closed") o.status = "open";
+  if (o.kind !== "meal") o.kind = "general";
   if (o.date && !/^\d{4}-\d{2}-\d{2}$/.test(o.date)) o.date = "";
   if (o.signupUrl && !/^https?:\/\//i.test(o.signupUrl)) o.signupUrl = "";
   return o;
@@ -181,7 +183,7 @@ export async function onRequest({ request, env, params }) {
       }
       case "admin/roster": {
         const id = str(body.courseId, 40);
-        const entries = (Array.isArray(body.entries) ? body.entries : []).slice(0, 3000).map(cleanProfile).filter(p => p.name);
+        const entries = (Array.isArray(body.entries) ? body.entries : []).slice(0, 3000).map(cleanEntry).filter(p => p.name);
         await db.prepare("INSERT OR REPLACE INTO rosters (course_id, entries, imported_at) VALUES (?, ?, ?)").bind(id, JSON.stringify(entries), now()).run();
         return J({ ok: true, count: entries.length });
       }
