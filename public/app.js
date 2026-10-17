@@ -427,8 +427,9 @@ function adminView(){
     </form></section>`
     : `<div class="actions" style="margin-bottom:16px"><button class="btn primary" data-act="new">＋ 新增課程</button><button class="btn primary" data-act="new-award">＋ 新增獎勵</button>${S.courses.length?`<button class="btn" data-act="csv-all">下載全部報名名單 CSV</button>`:""}</div>`;
 
-  const cs = sortedCourses();
-  const rows = cs.length ? cs.map(c=>{
+  return form + adminTable();
+}
+function courseAdminRow(c){
     const r = peopleFor(c), cap=Number(c.capacity)||0, ext=!!c.signupUrl, info=rosterInfo(c.id);
     const nPend = r.filter(p=>!p.confirmed).length;
     const del = S.confirmDel===c.id ? `<div class="confirm">刪除「${esc(c.title)}」？這堂課的 ${r.length} 筆報名紀錄、官方名單和圖片會一起刪除，無法復原。
@@ -455,10 +456,46 @@ function adminView(){
         <button class="btn danger" data-act="del" data-id="${esc(c.id)}">刪除</button>
       </div>${del}
     </section>`;
-  }).join("") : (e?"":`<div class="empty"><strong>還沒有課程</strong>按「新增課程」建立第一堂，發布後同事立刻看得到。</div>`);
-  const as = sortedAwards();
-  const awards = as.length ? `<h2 class="shelf-h">公司獎勵</h2>` + as.map(awardAdminRow).join("") : "";
-  return form + rows + awards;
+}
+function adminStatus(c){
+  if(isAward(c)){ const st=awardStatus(c); return {label:st.label, cls:st.key==="on"?"mine":st.key==="soon"?"pending":"closed"}; }
+  if(c.date && c.date < today()) return {label:"已結束", cls:"closed"};
+  if(c.status==="closed") return {label:"報名截止", cls:"closed"};
+  return {label:"開放中", cls:"mine"};
+}
+function adminTable(){
+  const all = [...sortedCourses(), ...sortedAwards()];
+  if(!all.length) return S.editing ? "" : `<div class="empty"><strong>還沒有課程</strong>按「新增課程」建立第一堂，發布後同事立刻看得到。</div>`;
+  const f = S.adminFilter || "active";
+  const shown = all.filter(c=>{
+    const ended = isAward(c) ? awardStatus(c).key==="ended" : (c.date && c.date < today());
+    return f==="all" ? true : f==="ended" ? ended : !ended;
+  });
+  const kind = c => isAward(c) ? `<span class="pill closed">獎勵</span>` : isMeal(c) ? `<span class="pill closed">附餐點</span>` : `<span class="who">一般</span>`;
+  const cnt = (c,k) => ([...sortedCourses(), ...sortedAwards()].filter(x=>{ const e=isAward(x)?awardStatus(x).key==="ended":(x.date&&x.date<today()); return k==="all"?true:k==="ended"?e:!e; }).length);
+  const rowsHTML = shown.map(c=>{
+    const n = isAward(c) ? officialFor(c.id).length : peopleFor(c).length;
+    const info = rosterInfo(c.id), st = adminStatus(c), open = S.adminOpen===c.id;
+    const when = isAward(c) ? `${c.date||"—"}<br><span class="who">至 ${c.endDate||"—"}</span>` : (c.date||"待定");
+    return `<tr class="${open?"row-open":""}">
+      <td class="t">${when}</td>
+      <td class="name-cell"><button type="button" class="linkish" data-act="admin-open" data-id="${esc(c.id)}">${esc(c.title)}</button></td>
+      <td>${kind(c)}</td>
+      <td><span class="pill ${st.cls}">${st.label}</span></td>
+      <td class="t">${n} 人</td>
+      <td class="t">${info?fmtTime(info.importedAt):"—"}</td>
+      <td><div class="ops"><button type="button" class="btn ${open?"":"primary "}sm" data-act="admin-open" data-id="${esc(c.id)}">${open?"收合":"管理"}</button><button type="button" class="btn sm" data-act="edit" data-id="${esc(c.id)}">編輯</button></div></td>
+    </tr>`;
+  }).join("");
+  const open = S.adminOpen && all.find(x=>x.id===S.adminOpen);
+  return `<section class="panel admin-list">
+      <div class="title-row" style="justify-content:space-between;margin-bottom:10px">
+        <h2 style="margin:0">課程與獎勵總表</h2>
+        <div class="seg seg-tabs">${[["active","進行中／即將開始"],["ended","已結束"],["all","全部"]].map(([k,l])=>`<button type="button" class="btn sm ${f===k?"primary":""}" data-act="admin-filter" data-k="${k}">${l} ${cnt(null,k)}</button>`).join("")}</div>
+      </div>
+      ${shown.length?`<div class="tbl"><table class="admin-table"><thead><tr><th>日期</th><th>名稱</th><th>類型</th><th>狀態</th><th>人數</th><th>名單更新</th><th></th></tr></thead><tbody>${rowsHTML}</tbody></table></div>`:`<p class="who" style="margin:0">這個分類目前沒有項目。</p>`}
+    </section>
+    <div id="adminDetail">${open ? (isAward(open) ? awardAdminRow(open) : courseAdminRow(open)) : `<p class="hint" style="text-align:center">點表格中的「管理」或名稱，可以查看名單、匯入名單、下載 CSV、截止或刪除。</p>`}</div>`;
 }
 
 /* 圖片上傳 */
@@ -680,6 +717,8 @@ document.addEventListener("click", async ev=>{
   else if(act==="goto-new"){ S.tab="admin"; startEdit("new"); render(); }
   else if(act==="new-award"){ startEdit("new","award"); render(); setTimeout(()=>$("#f-title")?.focus(),0); }
   else if(act==="goto-award") gotoAward(id);
+  else if(act==="admin-open"){ S.adminOpen = S.adminOpen===id ? null : id; if(S.importing && S.importing!==S.adminOpen) closeImport(); S.confirmDel=null; render(); if(S.adminOpen) setTimeout(()=>$("#adminDetail")?.scrollIntoView({behavior:"smooth",block:"start"}),0); }
+  else if(act==="admin-filter"){ S.adminFilter=b.dataset.k; render(); }
   else if(act==="new"){ startEdit("new"); render(); setTimeout(()=>$("#f-title")?.focus(),0); }
   else if(act==="edit"){ startEdit(id); render(); window.scrollTo({top:0,behavior:"smooth"}); }
   else if(act==="cancel-edit"){ dropImages(S.uploaded); S.uploaded=[]; S.editing=null; render(); }
