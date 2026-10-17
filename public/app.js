@@ -320,17 +320,37 @@ function awardCard(a){
     </div>
   </article>`;
 }
+function awardShelfItem(a){
+  const st = awardStatus(a), mine = myAwards(a), n = officialFor(a.id).length;
+  const period = `${a.date?fmtDay(a.date).replace(/^\d{4}\//,""):"即日起"} – ${a.endDate?fmtDay(a.endDate).replace(/^\d{4}\//,""):"另行公告"}`;
+  const cover = a.poster
+    ? `<img src="${esc(blob(a.poster))}" alt="${esc(a.title)} 海報" loading="lazy">`
+    : `<span class="ph ph-gold"><span class="ph-date">獎勵</span><span class="ph-title">${esc(a.title)}</span><span class="ph-foot">${esc(period)}</span></span>`;
+  return `<article class="book${st.key==="ended"?" past":""}">
+    <button type="button" class="cover" data-act="goto-award" data-id="${esc(a.id)}" aria-label="查看 ${esc(a.title)}">
+      ${cover}
+      ${mine.length?`<span class="stamp stamp-confirmed">已達成</span>`:""}
+      <span class="tag">${st.label}</span>
+    </button>
+    <div class="book-meta"><div class="bt">${esc(a.title)}</div><div class="bd">${esc(period)}</div>
+      ${mine.length?`<div class="bd meal-line">我的獎勵：${esc(mine.map(m=>m.award||"已達成").join("、"))}</div>`:(n?`<div class="bd">已達成 ${n} 人</div>`:"")}</div>
+    <button type="button" class="btn ${mine.length?"":"primary "}block" data-act="goto-award" data-id="${esc(a.id)}">查看獎勵內容</button>
+  </article>`;
+}
 function awardView(){
   const as = sortedAwards();
-  const head = `<div class="award-head"><h2>公司獎勵總覽</h2><span class="who">獎勵期間、注意事項與目前達成名單</span></div>`;
+  const open = S.awardOpen && as.find(a=>a.id===S.awardOpen);
+  if(open) return `<div class="award-back"><button type="button" class="btn link" data-act="award-back">← 回到獎勵總覽</button></div><div class="list">${awardCard(open)}</div>`;
+  const head = `<div class="award-head"><h2>公司獎勵總覽</h2><span class="who">點海報查看獎勵期間、注意事項與達成名單</span></div>`;
   if(!as.length) return head + `<div class="empty"><strong>目前沒有公布中的獎勵</strong>${S.isOwner?"到「課程管理」按「新增獎勵」建立第一個。":"公司獎勵公布後會出現在這裡。"}</div>`;
-  return head + `<div class="list">${as.map(awardCard).join("")}</div>`;
+  const live = as.filter(a=>awardStatus(a).key!=="ended"), ended = as.filter(a=>awardStatus(a).key==="ended");
+  return head + (live.length?`<div class="shelf">${live.map(awardShelfItem).join("")}</div>`:`<div class="empty"><strong>目前沒有進行中的獎勵</strong>新獎勵公布後會出現在這裡。</div>`)
+    + (ended.length?`<h2 class="shelf-h">已結束的獎勵</h2><div class="shelf">${ended.map(awardShelfItem).join("")}</div>`:"");
 }
 function gotoAward(id){
-  S.tab="award"; S.loginOpen=false; render();
+  S.tab="award"; S.awardOpen=id; S.loginOpen=false; render();
   try{ history.replaceState(null,"","#a-"+id); }catch(e){}
-  const el = document.getElementById("a-"+id); if(!el) return;
-  el.scrollIntoView({block:"start"}); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+  window.scrollTo({top:0});
 }
 
 function listView(onlyMine){
@@ -701,7 +721,7 @@ function adminLogout(){ S.adminKey=""; ss.del("cs-admin"); S.isOwner=false; S.ed
 
 document.addEventListener("click", async ev=>{
   const tab = ev.target.closest("nav.tabs button");
-  if(tab){ S.tab=tab.dataset.tab; S.loginOpen=false; render(); return; }
+  if(tab){ S.tab=tab.dataset.tab; S.loginOpen=false; if(S.tab==="award") S.awardOpen=null; render(); return; }
   const b = ev.target.closest("[data-act]"); if(!b) return;
   const id=b.dataset.id, act=b.dataset.act;
   if(act==="goto") gotoCourse(id);
@@ -717,6 +737,7 @@ document.addEventListener("click", async ev=>{
   else if(act==="goto-new"){ S.tab="admin"; startEdit("new"); render(); }
   else if(act==="new-award"){ startEdit("new","award"); render(); setTimeout(()=>$("#f-title")?.focus(),0); }
   else if(act==="goto-award") gotoAward(id);
+  else if(act==="award-back"){ S.awardOpen=null; try{ history.replaceState(null,"","#awards"); }catch(e){} render(); window.scrollTo({top:0}); }
   else if(act==="admin-open"){ S.adminOpen = S.adminOpen===id ? null : id; if(S.importing && S.importing!==S.adminOpen) closeImport(); S.confirmDel=null; render(); if(S.adminOpen) setTimeout(()=>$("#adminDetail")?.scrollIntoView({behavior:"smooth",block:"start"}),0); }
   else if(act==="admin-filter"){ S.adminFilter=b.dataset.k; render(); }
   else if(act==="new"){ startEdit("new"); render(); setTimeout(()=>$("#f-title")?.focus(),0); }
