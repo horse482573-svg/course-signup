@@ -68,6 +68,39 @@ const MSG = {
 };
 const errMsg = e => MSG[e && e.error] || "操作沒有成功，請稍後再試";
 
+/* 瀏覽統計：每次開啟網頁記一次（課程舉辦人自己不計） */
+function logVisit(){
+  if(S.isOwner || location.hash==="#admin") return;
+  let vid = ls.get("cs-vid");
+  if(!vid){ vid = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)+Date.now()).replace(/-/g,"").slice(0,20); ls.set("cs-vid", vid); }
+  api("visit", {vid, named: !!S.me}).catch(()=>{});
+}
+async function loadVisits(){
+  if(!S.isOwner) return;
+  try{ S.visits = (await api("admin/visits",{})).days; }catch(e){}
+}
+function visitsBox(){
+  const d = S.visits;
+  if(!d) return "";
+  const td = today();
+  const t = d.find(x=>x.day===td) || {views:0,people:0,named:0};
+  const last7 = d.filter(x=>x.day > new Date(Date.now()+8*3600e3-7*864e5).toISOString().slice(0,10));
+  const sum = k => last7.reduce((a,x)=>a+(+x[k]||0),0);
+  const rows = d.slice(0,14);
+  const max = Math.max(1,...rows.map(x=>+x.views||0));
+  return `<section class="panel visits"><h2>瀏覽統計</h2>
+    <div class="vstats">
+      <div><span>今天人次</span><b>${t.views}</b></div>
+      <div><span>今天人數</span><b>${t.people}</b></div>
+      <div><span>近 7 天人次</span><b>${sum("views")}</b></div>
+      <div><span>近 7 天人數（每天加總）</span><b>${sum("people")}</b></div>
+    </div>
+    ${rows.length?`<table class="vtable"><thead><tr><th>日期</th><th>人次</th><th>人數</th><th>已填資料</th><th class="vbar-h" aria-hidden="true"></th></tr></thead><tbody>
+      ${rows.map(x=>`<tr><td>${esc(x.day.slice(5).replace("-","/"))}</td><td>${x.views}</td><td>${x.people}</td><td>${x.named}</td><td class="vbar-c" aria-hidden="true"><i style="width:${Math.round((+x.views||0)/max*100)}%"></i></td></tr>`).join("")}
+    </tbody></table>`:`<p class="hint">從 10/19 開始記錄，還沒有資料。</p>`}
+    <p class="hint">人次＝網頁被開啟的次數；人數＝不同的手機或電腦數；已填資料＝其中有填報名資料的人數。你登入課程管理時的瀏覽不計入。</p>
+  </section>`;
+}
 async function refresh(soft){
   try{
     const r = await api("state");
@@ -462,7 +495,7 @@ function adminView(){
     </form></section>`
     : `<div class="actions" style="margin-bottom:16px"><button class="btn primary" data-act="new">＋ 新增課程</button><button class="btn primary" data-act="new-award">＋ 新增獎勵</button>${S.courses.length?`<button class="btn" data-act="csv-all">下載全部報名名單 CSV</button>`:""}</div>`;
 
-  return form + adminTable();
+  return form + visitsBox() + adminTable();
 }
 function courseAdminRow(c){
     const r = peopleFor(c), cap=Number(c.capacity)||0, ext=!!c.signupUrl, info=rosterInfo(c.id);
@@ -814,7 +847,7 @@ document.addEventListener("submit", async ev=>{
   if(f.id==="courseForm") return saveCourse();
   if(f.id==="loginForm"){
     const key = $("#l-key").value;
-    try{ await api("admin/check",{}, {key}); S.adminKey=key; ss.set("cs-admin",key); S.isOwner=true; S.loginOpen=false; S.tab="admin"; render(); toast("已登入課程管理"); }
+    try{ await api("admin/check",{}, {key}); S.adminKey=key; ss.set("cs-admin",key); S.isOwner=true; S.loginOpen=false; S.tab="admin"; render(); toast("已登入課程管理"); await loadVisits(); render(); }
     catch(e){ $("#lErr").textContent = e.error==="bad_key" ? "密碼不對" : errMsg(e); }
     return;
   }
@@ -838,6 +871,7 @@ document.addEventListener("submit", async ev=>{
   render();
   if(S.adminKey){ try{ await api("admin/check",{}); S.isOwner=true; }catch(e){ S.adminKey=""; ss.del("cs-admin"); } }
   await refresh();
+  logVisit(); await loadVisits(); if(S.visits) render(true);
   const h = (location.hash||"").slice(1);
   if(h==="admin" && !S.isOwner){ S.loginOpen=true; render(); }
   else if(h==="awards"){ S.tab="award"; render(); }

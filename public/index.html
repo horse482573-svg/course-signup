@@ -222,6 +222,16 @@ label.check input{width:auto}
 .prog-bar{height:6px;border-radius:999px;background:var(--line);overflow:hidden}
 .prog-bar i{display:block;height:100%;border-radius:inherit;background:var(--accent)}
 .prog.full .prog-bar i{background:var(--muted)}
+.vstats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:4px 0 14px}
+.vstats div{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.vstats span{font-size:12px;color:var(--muted)}
+.vstats b{font-size:22px;font-variant-numeric:tabular-nums}
+.vtable{width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums}
+.vtable th,.vtable td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+.vtable th{font-weight:600;color:var(--muted);font-size:12.5px}
+.vbar-c{width:40%}
+.vbar-c i{display:block;height:8px;border-radius:999px;background:var(--accent);min-width:2px}
+@media (max-width:640px){.vstats{grid-template-columns:repeat(2,1fr)}.vbar-c{width:25%}}
 .stamp-skip{background:var(--muted);color:var(--surface)}
 .book.skipped .cover img,.book.skipped .cover .ph{filter:grayscale(.6);opacity:.75}
 .skip-toggle{display:flex;align-items:center;gap:8px;align-self:flex-start;background:none;border:0;padding:2px 0;font:inherit;font-size:13px;color:var(--muted);cursor:pointer}

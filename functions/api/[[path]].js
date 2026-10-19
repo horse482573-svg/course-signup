@@ -155,7 +155,23 @@ export async function onRequest({ request, env, params }) {
         return J({ ok: true, pkey: keyOf(p) });
       }
 
+      case "visit": {
+        const vid = str(body.vid, 40).replace(/[^\w-]/g, "");
+        if (!vid) return J({ ok: false, error: "bad_input" }, 400);
+        await db.prepare(
+          `INSERT INTO visits (day, vid, n, named) VALUES (?, ?, 1, ?)
+           ON CONFLICT(day, vid) DO UPDATE SET n = n + 1, named = MAX(named, excluded.named)`
+        ).bind(todayTW(), vid, body.named ? 1 : 0).run();
+        return J({ ok: true });
+      }
+
       // ---------- organizer ----------
+      case "admin/visits": {
+        const r = await db.prepare(
+          "SELECT day, SUM(n) AS views, COUNT(*) AS people, SUM(named) AS named FROM visits GROUP BY day ORDER BY day DESC LIMIT 60"
+        ).all();
+        return J({ ok: true, days: r.results });
+      }
       case "admin/check":
         return J({ ok: true });
       case "admin/course": {
