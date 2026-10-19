@@ -30,6 +30,11 @@ const S = {
   importing:null, impRows:null, impMode:"replace", impText:"", impBusy:false,
 };
 const myKey = () => S.me ? keyOf(S.me) : null;
+/* 「不再提醒」：只存在這台裝置 */
+let skipIds = []; try{ skipIds = JSON.parse(ls.get("cs-skip")||"[]"); }catch(e){}
+S.skip = new Set(Array.isArray(skipIds) ? skipIds : []);
+const isSkipped = c => S.skip.has(c.id) && !myState(c);
+function toggleSkip(id){ if(S.skip.has(id)) S.skip.delete(id); else S.skip.add(id); ls.set("cs-skip", JSON.stringify([...S.skip])); }
 /* 本站報名：暫停中。沒有報名連結的課程，名單以舉辦人匯入的官方名單為準。改成 true 即可恢復。 */
 const ALLOW_ONSITE = false;
 
@@ -158,21 +163,28 @@ function shelfItem(c){
   const cover = c.poster
     ? `<img src="${esc(blob(c.poster))}" alt="${esc(c.title)} 課程海報" loading="lazy">`
     : `<span class="ph"><span class="ph-date">${d?`${d.getMonth()+1}/${d.getDate()}`:"TBD"}</span><span class="ph-title">${esc(c.title)}</span><span class="ph-foot">${esc(c.instructor||c.location||"公司課程")}</span></span>`;
-  return `<article class="book${past?" past":""}">
+  const skipped = isSkipped(c);
+  const skipCtl = (!state && !past) ? `<button type="button" class="skip-toggle${skipped?" on":""}" data-act="skip" data-id="${esc(c.id)}" aria-pressed="${skipped}"><span class="switch" aria-hidden="true"></span>不再提醒</button>` : "";
+  return `<article class="book${past?" past":""}${skipped?" skipped":""}">
     <button type="button" class="cover" data-act="goto" data-id="${esc(c.id)}" aria-label="查看 ${esc(c.title)}">
       ${cover}
       ${c.hot&&!past?`<span class="hot-badge">近期最火</span>`:""}
-      ${state?`<span class="stamp stamp-${state}">${STAMP[state]}</span>`:""}
+      ${state?`<span class="stamp stamp-${state}">${STAMP[state]}</span>`:(skipped?`<span class="stamp stamp-skip">不參加</span>`:"")}
       ${tag?`<span class="tag">${tag}</span>`:""}
     </button>
     <div class="book-meta"><div class="bt">${esc(c.title)}</div><div class="bd">${when}</div>${(()=>{ const m=myMeal(c); return m&&(m.meal||m.drink)?`<div class="bd meal-line">我的餐點：${esc([m.meal,m.drink].filter(Boolean).join(" ＋ "))}</div>`:(isMeal(c)?`<div class="bd">附餐點</div>`:""); })()}</div>
-    <button type="button" class="btn ${state?"":"primary "}block" data-act="goto" data-id="${esc(c.id)}">${state?"查看報名狀態":"前往報名"}</button>
+    ${(()=>{ if(isAward(c)) return "";
+      if(cap>0){ const pct=Math.min(100,Math.round(n/cap*100)), full=n>=cap;
+        return `<div class="prog${full?" full":""}"><div class="prog-top"><span>已報名 <b>${n}</b> / ${cap} 人</span><span>${full?"額滿":"剩 "+(cap-n)+" 位"}</span></div><div class="prog-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${cap}" aria-valuenow="${n}" aria-label="報名人數"><i style="width:${pct}%"></i></div></div>`; }
+      return `<div class="prog"><div class="prog-top"><span>已報名 <b>${n}</b> 人</span><span>不限名額</span></div></div>`; })()}
+    <button type="button" class="btn ${state||skipped?"":"primary "}block" data-act="goto" data-id="${esc(c.id)}">${state?"查看報名狀態":skipped?"查看課程":"前往報名"}</button>
+    ${skipCtl}
   </article>`;
 }
 function shelfView(){
   const cs = sortedCourses();
   if(!cs.length) return listView(false);
-  const up = cs.filter(c=>!(c.date && c.date<today())).sort((a,b)=>(myState(a)?1:0)-(myState(b)?1:0));
+  const up = cs.filter(c=>!(c.date && c.date<today())).sort((a,b)=>((myState(a)||isSkipped(a))?1:0)-((myState(b)||isSkipped(b))?1:0));
   const past = cs.filter(c=>c.date && c.date<today());
   return (up.length?`<div class="shelf">${up.map(shelfItem).join("")}</div>`:`<div class="empty"><strong>目前沒有即將開課的課程</strong>新課程發布後會出現在這裡。</div>`)
     + (past.length?`<h2 class="shelf-h">已結束的課程</h2><div class="shelf">${past.map(shelfItem).join("")}</div>`:"");
@@ -728,6 +740,7 @@ document.addEventListener("click", async ev=>{
   const b = ev.target.closest("[data-act]"); if(!b) return;
   const id=b.dataset.id, act=b.dataset.act;
   if(act==="goto") gotoCourse(id);
+  else if(act==="skip"){ toggleSkip(id); render(); toast(S.skip.has(id)?"已設為不再提醒，課程移到後面":"已恢復提醒"); }
   else if(act==="join"){ S.pendingJoin=id; if(!S.me) closeProfile(); render(); }
   else if(act==="join-yes") join(id);
   else if(act==="join-no"){ S.pendingJoin=null; render(); }
