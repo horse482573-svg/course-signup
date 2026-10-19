@@ -161,6 +161,7 @@ function shelfItem(c){
   return `<article class="book${past?" past":""}">
     <button type="button" class="cover" data-act="goto" data-id="${esc(c.id)}" aria-label="查看 ${esc(c.title)}">
       ${cover}
+      ${c.hot&&!past?`<span class="hot-badge">近期最火</span>`:""}
       ${state?`<span class="stamp stamp-${state}">${STAMP[state]}</span>`:""}
       ${tag?`<span class="tag">${tag}</span>`:""}
     </button>
@@ -171,7 +172,7 @@ function shelfItem(c){
 function shelfView(){
   const cs = sortedCourses();
   if(!cs.length) return listView(false);
-  const up = cs.filter(c=>!(c.date && c.date<today()));
+  const up = cs.filter(c=>!(c.date && c.date<today())).sort((a,b)=>(myState(a)?1:0)-(myState(b)?1:0));
   const past = cs.filter(c=>c.date && c.date<today());
   return (up.length?`<div class="shelf">${up.map(shelfItem).join("")}</div>`:`<div class="empty"><strong>目前沒有即將開課的課程</strong>新課程發布後會出現在這裡。</div>`)
     + (past.length?`<h2 class="shelf-h">已結束的課程</h2><div class="shelf">${past.map(shelfItem).join("")}</div>`:"");
@@ -216,6 +217,7 @@ function courseCard(c){
   if(state==="confirmed") pills += `<span class="pill mine">✓ 已經報名了</span>`;
   else if(state==="pending") pills += `<span class="pill pending">已報名（待確認）</span>`;
   else if(state==="missing") pills += `<span class="pill miss">⚠ 名單中找不到你</span>`;
+  if(c.hot && !past) pills += `<span class="pill hot">近期最火</span>`;
   if(isMeal(c)) pills += `<span class="pill closed">附餐點</span>`;
   if(past) pills += `<span class="pill closed">已結束</span>`;
   else if(c.status==="closed") pills += `<span class="pill closed">報名截止</span>`;
@@ -424,6 +426,7 @@ function adminView(){
       <div class="grid">
         <label class="full">課程名稱 *<input id="f-title" required maxlength="80" value="${esc(c.title)}" placeholder="例如：Excel 樞紐分析實戰"></label>
         <label class="full">課程類型<select id="f-kind"><option value="general"${c.kind!=="meal"?" selected":""}>一般專班</option><option value="meal"${c.kind==="meal"?" selected":""}>有餐點的專班（名單可匯入早餐、飲料，同事看得到自己點的餐）</option></select></label>
+        <label class="full check"><input type="checkbox" id="f-hot" ${c.hot?"checked":""}> 標示為「近期最火」（課程總覽的海報會出現火紅標籤）</label>
         <label class="full">報名連結（選填）<input id="f-url" type="text" inputmode="url" autocomplete="off" maxlength="2000" value="${esc(c.signupUrl)}" placeholder="貼上 Google 表單或其他報名系統的網址，例如 https://forms.gle/…">
           <span class="hint">留空：卡片不顯示報名按鈕，名單以你匯入的官方名單為準。填入網址：卡片會出現「前往報名」按鈕，同事報完名回來按「我已完成報名」，你再匯入官方名單核對。</span></label>
         <label>日期<input id="f-date" type="date" value="${esc(c.date)}"></label>
@@ -491,7 +494,7 @@ function adminTable(){
     const ended = isAward(c) ? awardStatus(c).key==="ended" : (c.date && c.date < today());
     return f==="all" ? true : f==="ended" ? ended : !ended;
   });
-  const kind = c => isAward(c) ? `<span class="pill closed">獎勵</span>` : isMeal(c) ? `<span class="pill closed">附餐點</span>` : `<span class="who">一般</span>`;
+  const kind = c => (isAward(c) ? `<span class="pill closed">獎勵</span>` : isMeal(c) ? `<span class="pill closed">附餐點</span>` : `<span class="who">一般</span>`) + (c.hot&&!isAward(c)?` <span class="pill hot">最火</span>`:"");
   const cnt = (c,k) => ([...sortedCourses(), ...sortedAwards()].filter(x=>{ const e=isAward(x)?awardStatus(x).key==="ended":(x.date&&x.date<today()); return k==="all"?true:k==="ended"?e:!e; }).length);
   const rowsHTML = shown.map(c=>{
     const n = isAward(c) ? officialFor(c.id).length : peopleFor(c).length;
@@ -504,7 +507,7 @@ function adminTable(){
       <td><span class="pill ${st.cls}">${st.label}</span></td>
       <td class="t">${n} 人</td>
       <td class="t">${info?fmtTime(info.importedAt):"—"}</td>
-      <td><div class="ops"><button type="button" class="btn ${open?"":"primary "}sm" data-act="admin-open" data-id="${esc(c.id)}">${open?"收合":"管理"}</button><button type="button" class="btn sm" data-act="edit" data-id="${esc(c.id)}">編輯</button></div></td>
+      <td><div class="ops"><button type="button" class="btn ${open?"":"primary "}sm" data-act="admin-open" data-id="${esc(c.id)}">${open?"收合":"管理"}</button><button type="button" class="btn sm" data-act="edit" data-id="${esc(c.id)}">編輯</button>${isAward(c)?"":`<button type="button" class="btn sm ${c.hot?"hot-on":""}" data-act="toggle-hot" data-id="${esc(c.id)}" title="${c.hot?"取消近期最火":"設為近期最火"}">${c.hot?"取消最火":"設為最火"}</button>`}</div></td>
     </tr>`;
   }).join("");
   const open = S.adminOpen && all.find(x=>x.id===S.adminOpen);
@@ -677,7 +680,7 @@ async function saveCourse(){
     let ok=false; try{ const u=new URL(signupUrl); ok = /^https?:$/.test(u.protocol) && u.hostname.includes("."); }catch(e){}
     if(!ok){ $("#formErr").textContent="報名連結看起來不是網址，請直接從瀏覽器網址列複製貼上"; $("#f-url").focus(); return; }
   }
-  const course = { title, signupUrl, kind:$("#f-kind").value, date:v("f-date"), time:v("f-time"), location:v("f-location"), instructor:v("f-instructor"),
+  const course = { title, signupUrl, kind:$("#f-kind").value, hot:$("#f-hot").checked, date:v("f-date"), time:v("f-time"), location:v("f-location"), instructor:v("f-instructor"),
     capacity:Math.max(0, parseInt(v("f-capacity")||"0",10)||0), status:$("#f-status").value, summary:v("f-summary"),
     detail:$("#f-detail").value.trim(), poster:S.draft.poster||"", payQr:S.draft.payQr||"", payNote:$("#f-paynote").value.trim() };
   const old = S.editing==="new" ? {} : (S.courses.find(x=>x.id===S.editing)||{});
@@ -739,6 +742,7 @@ document.addEventListener("click", async ev=>{
   else if(act==="goto-award") gotoAward(id);
   else if(act==="award-back"){ S.awardOpen=null; try{ history.replaceState(null,"","#awards"); }catch(e){} render(); window.scrollTo({top:0}); }
   else if(act==="admin-open"){ S.adminOpen = S.adminOpen===id ? null : id; if(S.importing && S.importing!==S.adminOpen) closeImport(); S.confirmDel=null; render(); if(S.adminOpen) setTimeout(()=>$("#adminDetail")?.scrollIntoView({behavior:"smooth",block:"start"}),0); }
+  else if(act==="toggle-hot"){ const c=S.courses.find(x=>x.id===id); if(c){ try{ await api("admin/course",{course:{...c, hot:!c.hot}}); toast(c.hot?"已取消「近期最火」":"已設為「近期最火」"); }catch(e){ toast(errMsg(e)); } await refresh(); } }
   else if(act==="admin-filter"){ S.adminFilter=b.dataset.k; render(); }
   else if(act==="new"){ startEdit("new"); render(); setTimeout(()=>$("#f-title")?.focus(),0); }
   else if(act==="edit"){ startEdit(id); render(); window.scrollTo({top:0,behavior:"smooth"}); }

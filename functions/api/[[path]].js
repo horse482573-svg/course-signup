@@ -27,6 +27,7 @@ const COURSE_FIELDS = {
 function cleanCourse(c) {
   const o = {};
   for (const [k, n] of Object.entries(COURSE_FIELDS)) o[k] = str(c?.[k], n);
+  o.hot = c?.hot === true;
   o.capacity = Math.max(0, Math.min(100000, parseInt(c?.capacity, 10) || 0));
   if (o.status !== "closed") o.status = "open";
   if (o.kind !== "meal" && o.kind !== "award") o.kind = "general";
