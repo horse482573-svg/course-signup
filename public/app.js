@@ -117,6 +117,15 @@ async function refresh(soft){
 /* ---------- derived data ---------- */
 function rosterFor(cid){ return S.signups.filter(s=>s.course_id===cid).map(s=>({...profileOf(s), pkey:s.pkey, at:s.at})); }
 function myRec(cid){ const k=myKey(); return k ? S.signups.find(s=>s.course_id===cid && s.pkey===k) : null; }
+/* 名單遮名：非本人顯示「湛O揚」（舉辦人登入時顯示全名） */
+function maskName(n){
+  const a=[...String(n||"").trim()];
+  if(a.length<=1 || /^未具名/.test(a.join(""))) return a.join("");
+  if(a.length===2) return a[0]+"O";
+  return a[0]+"O".repeat(a.length-2)+a[a.length-1];
+}
+const isMeP = p => !!S.me && ((p.pkey && p.pkey===myKey()) || sameP(S.me,p));
+const shownName = p => (S.isOwner || isMeP(p)) ? p.name : maskName(p.name);
 function sameP(a,b){
   const na=normName(a.name); if(!na || na!==normName(b.name)) return false;
   // 核對規則：姓名＋事業部相符即可（不看業務單位、職稱）。事業部允許包含關係，例如「紅包聯」＝「紅包聯事業部」
@@ -307,7 +316,7 @@ function courseCard(c){
       ${isMeal(c)?mealBox(c, state):""}
       <div class="roster">
         <h4>報名名單${rosterInfo(c.id)?` · 已於 ${fmtTime(rosterInfo(c.id).importedAt)} 核對官方名單`:""}</h4>
-        ${n?`<div class="chips">${people.map(r=>`<span class="chip${r.pkey&&r.pkey===k?" me":""}${r.confirmed?"":" pend"}">${esc(r.name)}${subline(r)?`<small>${esc(subline(r))}</small>`:""}${r.confirmed?"":`<small>待確認</small>`}</span>`).join("")}</div>`
+        ${n?`<div class="chips">${people.map(r=>`<span class="chip${r.pkey&&r.pkey===k?" me":""}${r.confirmed?"":" pend"}">${esc(shownName(r))}${subline(r)?`<small>${esc(subline(r))}</small>`:""}${r.confirmed?"":`<small>待確認</small>`}</span>`).join("")}</div>`
            :`<span class="who">還沒有人報名，成為第一位吧。</span>`}
       </div>
     </div>
@@ -361,7 +370,7 @@ function awardCard(a){
         <h4>目前達成名單 · ${list.length} 人${info?` · ${fmtTime(info.importedAt)} 更新`:""}</h4>
         ${counts.size>1?`<div class="chips" style="margin-bottom:8px">${[...counts].map(([n,c])=>`<span class="chip">${esc(n)}<small>${c} 人</small></span>`).join("")}</div>`:""}
         ${list.length?`<div class="tbl"><table><thead><tr><th>#</th><th>事業部</th><th>姓名</th><th>達成獎勵</th></tr></thead><tbody>
-          ${list.map((p,i)=>`<tr class="${k&&sameP(k,p)?"row-me":""}"><td class="t">${i+1}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.award||"—")}</td></tr>`).join("")}
+          ${list.map((p,i)=>`<tr class="${k&&sameP(k,p)?"row-me":""}"><td class="t">${i+1}</td><td>${esc(p.division||"—")}</td><td>${esc(shownName(p))}</td><td>${esc(p.award||"—")}</td></tr>`).join("")}
         </tbody></table></div>`:`<span class="who">${st.key==="soon"?"獎勵尚未開始。":"名單整理中，公布後會顯示在這裡。"}</span>`}
       </div>
     </div>
