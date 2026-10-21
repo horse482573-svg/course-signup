@@ -37,6 +37,32 @@ function cleanCourse(c) {
   return o;
 }
 
+// 遮名：湛翰揚 → 湛O揚
+function maskName(n) {
+  const a = [...String(n || "").trim()];
+  if (a.length <= 1 || /^未具名/.test(a.join(""))) return a.join("");
+  if (a.length === 2) return a[0] + "O";
+  return a[0] + "O".repeat(a.length - 2) + a[a.length - 1];
+}
+// 和前端相同的核對規則：姓名＋事業部（事業部允許包含關係或留空）
+function samePerson(a, b) {
+  const na = normName(a.name); if (!na || na !== normName(b.name)) return false;
+  const da = normUnit(a.division), db = normUnit(b.division);
+  return !da || !db || da === db || da.includes(db) || db.includes(da);
+}
+// 不可逆的比對代號：讓前端能把「回報」和「官方名單」配對，又看不到全名
+async function makeMatcher(secret) {
+  const cache = new Map();
+  return async name => {
+    const k = normName(name);
+    if (!cache.has(k)) {
+      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret + "|" + k));
+      cache.set(k, [...new Uint8Array(buf)].slice(0, 9).map(x => x.toString(16).padStart(2, "0")).join(""));
+    }
+    return cache.get(k);
+  };
+}
+
 function safeEqual(a, b) {
   a = String(a); b = String(b);
   let diff = a.length ^ b.length;
@@ -79,12 +105,33 @@ export async function onRequest({ request, env, params }) {
         db.prepare("SELECT course_id, pkey, unit, division, name, title, via, at FROM signups ORDER BY at"),
         db.prepare("SELECT course_id, entries, imported_at FROM rosters"),
       ]);
+      const url = new URL(request.url);
+      const viewer = { name: str(url.searchParams.get("n"), 30), division: str(url.searchParams.get("d"), 30), unit: str(url.searchParams.get("u"), 20) };
+      const vKey = viewer.name ? keyOf(viewer) : "";
+      const isMe = (o, pkey) => !!viewer.name && ((pkey && pkey === vKey) || samePerson(viewer, o));
+      const admin = !!env.ADMIN_PASSWORD && safeEqual(request.headers.get("x-admin-key") || "", env.ADMIN_PASSWORD);
+      const mk = await makeMatcher(env.ADMIN_PASSWORD || "course-signup");
+      const signups = [];
+      for (const s of ss.results) {
+        const me = isMe(s, s.pkey);
+        signups.push(admin || me
+          ? { ...s, mk: await mk(s.name), me }
+          : { ...s, name: maskName(s.name), pkey: "", mk: await mk(s.name), me });
+      }
       const rosters = {};
-      for (const r of rs.results) rosters[r.course_id] = { entries: JSON.parse(r.entries), importedAt: r.imported_at };
+      for (const r of rs.results) {
+        const entries = [];
+        for (const e of JSON.parse(r.entries)) {
+          const me = isMe(e);
+          entries.push({ ...e, name: admin || me ? e.name : maskName(e.name), mk: await mk(e.name), me });
+        }
+        rosters[r.course_id] = { entries, importedAt: r.imported_at };
+      }
       return J({
         ok: true,
+        admin,
         courses: cs.results.map(r => ({ id: r.id, ...JSON.parse(r.data) })),
-        signups: ss.results,
+        signups,
         rosters,
       });
     }

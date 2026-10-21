@@ -50,7 +50,7 @@ function fmtTime(iso){ if(!iso) return ""; const d=new Date(iso); if(isNaN(d)) r
 /* ---------- API ---------- */
 async function api(path, body, opts={}){
   const headers = {};
-  if(path.startsWith("admin/")) headers["x-admin-key"] = opts.key ?? S.adminKey;
+  if(path.startsWith("admin/") || (path.startsWith("state") && S.adminKey)) headers["x-admin-key"] = opts.key ?? S.adminKey;
   let init = {method: body===undefined ? "GET" : "POST", headers};
   if(body instanceof Blob){ init.body = body; headers["content-type"] = body.type; }
   else if(body!==undefined){ init.body = JSON.stringify(body); headers["content-type"] = "application/json"; }
@@ -103,7 +103,8 @@ function visitsBox(){
 }
 async function refresh(soft){
   try{
-    const r = await api("state");
+    const q = S.me ? "?"+new URLSearchParams({n:S.me.name||"", d:S.me.division||"", u:S.me.unit||""}) : "";
+    const r = await api("state"+q);
     S.courses = r.courses; S.signups = r.signups; S.rosters = r.rosters || {};
     S.loaded = true;
     $("#sync").textContent = "最後更新 " + fmtTime(new Date().toISOString()) + " · 每 20 秒自動更新";
@@ -115,7 +116,7 @@ async function refresh(soft){
 }
 
 /* ---------- derived data ---------- */
-function rosterFor(cid){ return S.signups.filter(s=>s.course_id===cid).map(s=>({...profileOf(s), pkey:s.pkey, at:s.at})); }
+function rosterFor(cid){ return S.signups.filter(s=>s.course_id===cid).map(s=>({...profileOf(s), pkey:s.pkey, at:s.at, mk:s.mk, me:s.me})); }
 function myRec(cid){ const k=myKey(); return k ? S.signups.find(s=>s.course_id===cid && s.pkey===k) : null; }
 /* 名單遮名：非本人顯示「湛O揚」（舉辦人登入時顯示全名） */
 function maskName(n){
@@ -124,18 +125,20 @@ function maskName(n){
   if(a.length===2) return a[0]+"O";
   return a[0]+"O".repeat(a.length-2)+a[a.length-1];
 }
-const isMeP = p => !!S.me && ((p.pkey && p.pkey===myKey()) || sameP(S.me,p));
+/* 伺服器會把非本人的名字先遮好，並標記 me＝這筆是不是目前這位同事 */
+const isMeP = p => !!S.me && (p.me===true || (p.me===undefined && ((p.pkey && p.pkey===myKey()) || sameP(S.me,p))));
 const shownName = p => (S.isOwner || isMeP(p)) ? p.name : maskName(p.name);
 function sameP(a,b){
-  const na=normName(a.name); if(!na || na!==normName(b.name)) return false;
+  if(a.mk && b.mk){ if(a.mk!==b.mk) return false; }
+  else { const na=normName(a.name); if(!na || na!==normName(b.name)) return false; }
   // 核對規則：姓名＋事業部相符即可（不看業務單位、職稱）。事業部允許包含關係，例如「紅包聯」＝「紅包聯事業部」
   const da=normUnit(a.division), db=normUnit(b.division);
   return !da || !db || da===db || da.includes(db) || db.includes(da);
 }
-const entryOf = o => ({...profileOf(o), meal:o?.meal||"", drink:o?.drink||"", award:o?.award||""});
+const entryOf = o => ({...profileOf(o), meal:o?.meal||"", drink:o?.drink||"", award:o?.award||"", mk:o?.mk, me:o?.me});
 const isMeal = c => c && c.kind==="meal";
 const isAward = c => c && c.kind==="award";
-function myMeal(c){ if(!isMeal(c) || !S.me) return null; return officialFor(c.id).find(o=>sameP(S.me,o)) || null; }
+function myMeal(c){ if(!isMeal(c) || !S.me) return null; return officialFor(c.id).find(isMeP) || null; }
 const officialFor = cid => (S.rosters[cid] && S.rosters[cid].entries) || [];
 const rosterInfo = cid => S.rosters[cid] || null;
 function peopleFor(c){
@@ -155,7 +158,7 @@ const SRC_LABEL = {page:"本頁報名", both:"已確認", self:"待確認", offi
 /* null | "confirmed" | "pending" | "missing" */
 function myState(c){
   const rec = myRec(c.id);
-  if(S.me && officialFor(c.id).some(o=>sameP(S.me,o))) return "confirmed";
+  if(S.me && officialFor(c.id).some(isMeP)) return "confirmed";
   if(!c.signupUrl) return rec ? "confirmed" : null;
   if(!rec) return null;
   const info = rosterInfo(c.id);
@@ -347,7 +350,7 @@ function awardStatus(a){
 function awardRank(a){ return {on:0, soon:1, ended:2}[awardStatus(a).key]; }
 function fmtDay(d){ if(!d) return ""; const x=new Date(d+"T00:00:00"); return `${x.getFullYear()}/${x.getMonth()+1}/${x.getDate()}（${WD[x.getDay()]}）`; }
 function daysLeft(e){ if(!e) return null; const a=new Date(today()+"T00:00:00"), b=new Date(e+"T00:00:00"); return Math.round((b-a)/86400000); }
-function myAwards(a){ if(!S.me) return []; return officialFor(a.id).filter(o=>sameP(S.me,o)); }
+function myAwards(a){ if(!S.me) return []; return officialFor(a.id).filter(isMeP); }
 function awardCard(a){
   const st = awardStatus(a), list = officialFor(a.id), info = rosterInfo(a.id), mine = myAwards(a), k = S.me ? S.me : null;
   const left = daysLeft(a.endDate);
@@ -370,7 +373,7 @@ function awardCard(a){
         <h4>目前達成名單 · ${list.length} 人${info?` · ${fmtTime(info.importedAt)} 更新`:""}</h4>
         ${counts.size>1?`<div class="chips" style="margin-bottom:8px">${[...counts].map(([n,c])=>`<span class="chip">${esc(n)}<small>${c} 人</small></span>`).join("")}</div>`:""}
         ${list.length?`<div class="tbl"><table><thead><tr><th>#</th><th>事業部</th><th>姓名</th><th>達成獎勵</th></tr></thead><tbody>
-          ${list.map((p,i)=>`<tr class="${k&&sameP(k,p)?"row-me":""}"><td class="t">${i+1}</td><td>${esc(p.division||"—")}</td><td>${esc(shownName(p))}</td><td>${esc(p.award||"—")}</td></tr>`).join("")}
+          ${list.map((p,i)=>`<tr class="${isMeP(p)?"row-me":""}"><td class="t">${i+1}</td><td>${esc(p.division||"—")}</td><td>${esc(shownName(p))}</td><td>${esc(p.award||"—")}</td></tr>`).join("")}
         </tbody></table></div>`:`<span class="who">${st.key==="soon"?"獎勵尚未開始。":"名單整理中，公布後會顯示在這裡。"}</span>`}
       </div>
     </div>
@@ -774,7 +777,7 @@ function csv(courses){
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function closeImport(){ S.importing=null; S.impRows=null; S.impText=""; S.impMode="replace"; }
-function adminLogout(){ S.adminKey=""; ss.del("cs-admin"); S.isOwner=false; S.editing=null; closeImport(); if(S.tab==="admin") S.tab="shelf"; render(); }
+function adminLogout(){ S.adminKey=""; ss.del("cs-admin"); S.isOwner=false; S.editing=null; closeImport(); if(S.tab==="admin") S.tab="shelf"; render(); refresh(true); }
 
 document.addEventListener("click", async ev=>{
   const tab = ev.target.closest("nav.tabs button");
@@ -856,7 +859,7 @@ document.addEventListener("submit", async ev=>{
   if(f.id==="courseForm") return saveCourse();
   if(f.id==="loginForm"){
     const key = $("#l-key").value;
-    try{ await api("admin/check",{}, {key}); S.adminKey=key; ss.set("cs-admin",key); S.isOwner=true; S.loginOpen=false; S.tab="admin"; render(); toast("已登入課程管理"); await loadVisits(); render(); }
+    try{ await api("admin/check",{}, {key}); S.adminKey=key; ss.set("cs-admin",key); S.isOwner=true; S.loginOpen=false; S.tab="admin"; render(); toast("已登入課程管理"); await loadVisits(); await refresh(); }
     catch(e){ $("#lErr").textContent = e.error==="bad_key" ? "密碼不對" : errMsg(e); }
     return;
   }
