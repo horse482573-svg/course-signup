@@ -319,7 +319,7 @@ function courseCard(c){
       ${isMeal(c)?mealBox(c, state):""}
       <div class="roster">
         <h4>報名名單${rosterInfo(c.id)?` · 已於 ${fmtTime(rosterInfo(c.id).importedAt)} 核對官方名單`:""}</h4>
-        ${n?`<div class="chips">${people.map(r=>`<span class="chip${r.pkey&&r.pkey===k?" me":""}${r.confirmed?"":" pend"}">${esc(shownName(r))}${subline(r)?`<small>${esc(subline(r))}</small>`:""}${r.confirmed?"":`<small>待確認</small>`}</span>`).join("")}</div>`
+        ${n?`<div class="plist">${people.map(r=>`<span class="pcell${isMeP(r)?" me":""}${r.confirmed?"":" pend"}"><span class="pdiv" title="${esc(r.division||"")}">${esc(r.division||"—")}</span><span class="pname">${esc(shownName(r))}</span>${r.confirmed?"":`<small>待確認</small>`}</span>`).join("")}</div>`
            :`<span class="who">還沒有人報名，成為第一位吧。</span>`}
       </div>
     </div>
