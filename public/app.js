@@ -147,11 +147,11 @@ function peopleFor(c){
   const out = rosterFor(c.id).map(p=>{
     const i = off.findIndex(o=>!o.used && sameP(p,o));
     if(i>=0) off[i].used = true;
-    const m = i>=0 ? {meal:off[i].meal, drink:off[i].drink} : {meal:"", drink:""};
+    const m = i>=0 ? {meal:off[i].meal, drink:off[i].drink, note:off[i].title} : {meal:"", drink:"", note:""};
     if(!ext) return {...p, ...m, confirmed:true, src:"page"};
     return {...p, ...m, confirmed:i>=0, src:i>=0?"both":"self"};
   });
-  for(const o of off) if(!o.used) out.push({...entryOf(o), pkey:null, at:"", confirmed:true, src:ext?"official":"list"});
+  for(const o of off) if(!o.used) out.push({...entryOf(o), note:o.title, pkey:null, at:"", confirmed:true, src:ext?"official":"list"});
   return out;
 }
 const SRC_LABEL = {page:"本頁報名", both:"已確認", self:"待確認", official:"官方名單（未回報）", list:"官方名單"};
@@ -319,7 +319,7 @@ function courseCard(c){
       ${isMeal(c)?mealBox(c, state):""}
       <div class="roster">
         <h4>報名名單${rosterInfo(c.id)?` · 已於 ${fmtTime(rosterInfo(c.id).importedAt)} 核對官方名單`:""}</h4>
-        ${n?`<div class="plist">${people.map(r=>`<span class="pcell${isMeP(r)?" me":""}${r.confirmed?"":" pend"}"><span class="pdiv" title="${esc(r.division||"")}">${esc(r.division||"—")}</span><span class="pname">${esc(shownName(r))}</span>${r.confirmed?"":`<small>待確認</small>`}</span>`).join("")}</div>`
+        ${n?`<div class="plist">${people.map(r=>`<span class="pcell${isMeP(r)?" me":""}${r.confirmed?"":" pend"}"><span class="pdiv" title="${esc(r.division||"")}">${esc(r.division||"—")}</span><span class="pname">${esc(shownName(r))}</span>${r.confirmed?"":`<small>待確認</small>`}${(()=>{ const t=[r.note,r.meal,r.drink].filter(Boolean).join(" · "); return t?`<span class="pnote">${esc(t)}</span>`:""; })()}</span>`).join("")}</div>`
            :`<span class="who">還沒有人報名，成為第一位吧。</span>`}
       </div>
     </div>
