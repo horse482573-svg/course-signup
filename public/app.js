@@ -22,7 +22,7 @@ const keyOf = p => normName(p.name) + "|" + normUnit(p.unit);
 
 let savedMe = null; try{ savedMe = JSON.parse(ls.get("cs-profile")); }catch(e){}
 const S = {
-  tab:"shelf", courses:[], signups:[], rosters:{}, loaded:false,
+  tab:"shelf", courses:[], signups:[], rosters:{}, attendance:{}, loaded:false,
   me: profileDone(savedMe) ? profileOf(savedMe) : null,
   adminKey: ss.get("cs-admin")||"", isOwner:false,
   editing:null, confirmDel:null, pendingJoin:null, busy:false, editProfile:false, loginOpen:false,
@@ -105,7 +105,7 @@ async function refresh(soft){
   try{
     const q = S.me ? "?"+new URLSearchParams({n:S.me.name||"", d:S.me.division||"", u:S.me.unit||""}) : "";
     const r = await api("state"+q);
-    S.courses = r.courses; S.signups = r.signups; S.rosters = r.rosters || {};
+    S.courses = r.courses; S.signups = r.signups; S.rosters = r.rosters || {}; S.attendance = r.attendance || {};
     S.loaded = true;
     $("#sync").textContent = "最後更新 " + fmtTime(new Date().toISOString()) + " · 每 20 秒自動更新";
   }catch(e){
@@ -368,16 +368,49 @@ function awardCard(a){
       <div class="award-period"><small>獎勵期間</small><b>${esc(period)}</b>${st.key==="on"&&left!==null&&left>=0?`<span class="who">${left===0?"今天截止":`還有 ${left} 天`}</span>`:""}</div>
       ${a.summary?`<p class="summary">${esc(a.summary)}</p>`:""}
       ${me}
+      ${a.attendance?attendanceBox(a):""}
       ${a.detail?`<div class="award-notes"><h4>獎勵注意事項</h4><p>${esc(a.detail)}</p></div>`:""}
       <div class="roster">
         <h4>目前達成名單 · ${list.length} 人${info?` · ${fmtTime(info.importedAt)} 更新`:""}</h4>
         ${counts.size>1?`<div class="chips" style="margin-bottom:8px">${[...counts].map(([n,c])=>`<span class="chip">${esc(n)}<small>${c} 人</small></span>`).join("")}</div>`:""}
-        ${list.length?`<div class="tbl"><table><thead><tr><th>#</th><th>事業部</th><th>姓名</th><th>達成獎勵</th></tr></thead><tbody>
-          ${list.map((p,i)=>`<tr class="${isMeP(p)?"row-me":""}"><td class="t">${i+1}</td><td>${esc(p.division||"—")}</td><td>${esc(shownName(p))}</td><td>${esc(p.award||"—")}</td></tr>`).join("")}
+        ${list.length?`<div class="tbl"><table><thead><tr><th>#</th>${a.attendance?"":"<th>事業部</th>"}<th>姓名</th><th>達成獎勵</th></tr></thead><tbody>
+          ${list.map((p,i)=>`<tr class="${isMeP(p)?"row-me":""}"><td class="t">${i+1}</td>${a.attendance?"":`<td>${esc(p.division||"—")}</td>`}<td>${esc(shownName(p))}</td><td>${esc(p.award||"—")}</td></tr>`).join("")}
         </tbody></table></div>`:`<span class="who">${st.key==="soon"?"獎勵尚未開始。":"名單整理中，公布後會顯示在這裡。"}</span>`}
       </div>
     </div>
   </article>`;
+}
+/* ---------- 早會全勤王：我的出勤 ---------- */
+const md = d => { const x=new Date(d+"T00:00:00"); return `${x.getMonth()+1}/${x.getDate()}`; };
+const DAYCLS = {"出席":"ok","公假":"ok","放假":"off","未計出席":"no","未到":"fut"};
+const DAYCODE = {O:"出席",L:"公假",H:"放假",X:"未計出席",F:"未到"};
+function attendanceBox(a){
+  const A = S.attendance[a.id]; if(!A || !S.me) return "";
+  const p = A.mine;
+  if(!p) return `<div class="att"><span class="mealbox-h">我的出勤</span><span class="who">出席紀錄裡找不到「${esc(S.me.name)}」。如果你有參加早會，請確認右上角的姓名和簽到時用的姓名一樣。</span></div>`;
+  const days = A.calendar.map((c,i)=>({...c, s: DAYCODE[(p.days||"")[i]]||"未到"}));
+  const ok = d => d.s==="出席"||d.s==="公假"||d.s==="放假";
+  const months = [...new Set(days.map(d=>+d.d.slice(5,7)))].map(m=>{
+    const ds = days.filter(d=>+d.d.slice(5,7)===m), rs = ds.filter(d=>d.s!=="未到"), pres = rs.filter(ok).length;
+    return {m, ds, total:ds.length, resolved:rs.length, present:pres, done:rs.length===ds.length, alive:pres===rs.length};
+  }).filter((x,i)=>i===0 || x.resolved>0);
+  const mStat = x => x.done && x.alive ? `<span class="pill mine">已達成單月全勤</span>`
+    : !x.alive ? `<span class="pill closed">本月全勤已中斷</span>` : `<span class="pill pending">全勤中・還有 ${x.total-x.resolved} 次</span>`;
+  const rs = days.filter(d=>d.s!=="未到"), kingAlive = rs.every(ok), king = kingAlive && rs.length===days.length;
+  const kingPill = king ? `<span class="pill mine">已達成全勤之王</span>` : kingAlive ? `<span class="pill pending">全勤之王挑戰中</span>` : `<span class="pill closed">全勤之王已中斷</span>`;
+  const weeks = (A.weeks||[]).map((w,i)=>{ const v=+((p.weeks||"")[i]||0); return {...w, done:!!(v&4), full:!!(v&2), wed:!!(v&1)}; })
+    .filter(w=>days.some(d=>d.d>=w.from && d.d<=w.to && d.type!=="future"));
+  const coupons = weeks.reduce((n,w)=>n+(+w.full)+(+w.wed),0);
+  const cal = x => x.ds.map(d=>`<span class="att-d ${DAYCLS[d.s]||"fut"}" title="${esc(md(d.d))} ${esc(d.s)}${d.note?"（"+esc(d.note)+"）":""}"><small>${md(d.d)}</small>${d.s==="未到"?"—":d.s==="未計出席"?"未計":esc(d.s)}</span>`).join("");
+  return `<div class="att">
+    <div class="att-top"><span class="mealbox-h">我的出勤</span><span class="who">${A.lastRecord?`出席紀錄更新到 ${md(A.lastRecord)}`:""}</span></div>
+    <div class="att-sum"><div><small>咖啡券累計</small><b>${coupons} 張</b></div><div><small>10–12 月全勤之王</small>${kingPill}</div></div>
+    ${months.map(x=>`<div class="att-m"><div class="att-mh"><b>${x.m} 月</b><span class="who">已出席 ${x.present}／${x.total} 次</span>${mStat(x)}</div><div class="att-cal">${cal(x)}</div></div>`).join("")}
+    ${weeks.length?`<div class="tbl"><table><thead><tr><th>週次</th><th>當週全勤</th><th>週三加碼</th><th>咖啡券</th></tr></thead><tbody>
+      ${weeks.map(w=>`<tr><td class="t">${md(w.from)}–${md(w.to)}</td><td>${w.done?(w.full?"✓":"—"):"進行中"}</td><td>${w.wed?"✓":"—"}</td><td class="t">${(+w.full)+(+w.wed)} 張</td></tr>`).join("")}
+    </tbody></table></div>`:""}
+    <span class="who">算出席：出席、公假、放假日；遲到、早退不計入。10/2 只計入單月全勤與全勤之王。咖啡券於下月初早會頒發。</span>
+  </div>`;
 }
 function awardShelfItem(a){
   const st = awardStatus(a), mine = myAwards(a), n = officialFor(a.id).length;
@@ -464,6 +497,8 @@ function awardAdminRow(a){
     ${list.length?`<div class="tbl"><table><thead><tr><th>#</th><th>事業部</th><th>姓名</th><th>達成獎勵</th></tr></thead><tbody>
       ${list.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.award||"—")}</td></tr>`).join("")}
     </tbody></table></div>`:""}
+    ${a.attendance?`<p class="hint" style="margin-top:12px">這個獎勵的出席與名單由 Claude 依【記錄原檔】計算匯入：把每週的 Excel 傳給 Claude 即可更新，這裡不需要手動操作。</p>
+    <div class="actions"><button class="btn link" data-act="goto-award" data-id="${esc(a.id)}">查看同事看到的畫面</button>${list.length?`<button class="btn" data-act="csv" data-id="${esc(a.id)}">下載名單 CSV</button>`:""}</div>`:`
     ${S.importing===a.id?importBox(a):""}
     <div class="actions" style="margin-top:12px">
       ${S.importing!==a.id?`<button class="btn primary" data-act="imp-open" data-id="${esc(a.id)}">${info?"更新達成名單":"匯入達成名單"}</button>`:""}
@@ -471,7 +506,7 @@ function awardAdminRow(a){
       ${list.length?`<button class="btn" data-act="csv" data-id="${esc(a.id)}">下載名單 CSV</button>`:""}
       <button class="btn link" data-act="goto-award" data-id="${esc(a.id)}">查看同事看到的畫面</button>
       <button class="btn danger" data-act="del" data-id="${esc(a.id)}">刪除</button>
-    </div>${del}
+    </div>${del}`}
   </section>`;
 }
 function adminView(){
@@ -564,7 +599,7 @@ function adminTable(){
       <td><span class="pill ${st.cls}">${st.label}</span></td>
       <td class="t">${n} 人</td>
       <td class="t">${info?fmtTime(info.importedAt):"—"}</td>
-      <td><div class="ops"><button type="button" class="btn ${open?"":"primary "}sm" data-act="admin-open" data-id="${esc(c.id)}">${open?"收合":"管理"}</button><button type="button" class="btn sm" data-act="edit" data-id="${esc(c.id)}">編輯</button>${isAward(c)?"":`<button type="button" class="btn sm ${c.hot?"hot-on":""}" data-act="toggle-hot" data-id="${esc(c.id)}" title="${c.hot?"取消近期最火":"設為近期最火"}">${c.hot?"取消最火":"設為最火"}</button>`}</div></td>
+      <td><div class="ops"><button type="button" class="btn ${open?"":"primary "}sm" data-act="admin-open" data-id="${esc(c.id)}">${open?"收合":"管理"}</button>${c.attendance?"":`<button type="button" class="btn sm" data-act="edit" data-id="${esc(c.id)}">編輯</button>`}${isAward(c)?"":`<button type="button" class="btn sm ${c.hot?"hot-on":""}" data-act="toggle-hot" data-id="${esc(c.id)}" title="${c.hot?"取消近期最火":"設為近期最火"}">${c.hot?"取消最火":"設為最火"}</button>`}</div></td>
     </tr>`;
   }).join("");
   const open = S.adminOpen && all.find(x=>x.id===S.adminOpen);

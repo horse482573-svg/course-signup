@@ -11,3 +11,6 @@ CREATE TABLE IF NOT EXISTS visits (
 
 CREATE TABLE IF NOT EXISTS images (id TEXT PRIMARY KEY, mime TEXT NOT NULL, body BLOB NOT NULL, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_signups_pkey ON signups(pkey);
+
+-- 早會全勤王：meta＝獎勵資訊與日曆（含不公開的 config），people＝每人出席與得分（由 tools/attendance_king.py 計算）
+CREATE TABLE IF NOT EXISTS attendance (id TEXT PRIMARY KEY, meta TEXT NOT NULL, people TEXT NOT NULL, updated_at TEXT NOT NULL);

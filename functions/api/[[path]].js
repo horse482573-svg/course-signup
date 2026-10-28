@@ -127,12 +127,31 @@ export async function onRequest({ request, env, params }) {
         }
         rosters[r.course_id] = { entries, importedAt: r.imported_at };
       }
+      const courses = cs.results.map(r => ({ id: r.id, ...JSON.parse(r.data) }));
+      // 早會全勤王：獎勵卡＋達成名單（遮名）＋只回傳本人的出席明細
+      const attendance = {};
+      let at = { results: [] };
+      try { at = await db.prepare("SELECT id, meta, people, updated_at FROM attendance").all(); } catch (e) { /* 資料表尚未建立 */ }
+      for (const r of at.results) {
+        const meta = JSON.parse(r.meta), people = JSON.parse(r.people);
+        courses.push({ id: r.id, ...meta.course, kind: "award", attendance: true });
+        const entries = [];
+        for (const p of people.filter(p => p.award).sort((x, y) => (y.coupons || 0) - (x.coupons || 0))) {
+          const me = isMe({ name: p.name });
+          entries.push({ unit: "", division: "", title: "", meal: "", drink: "", award: p.award,
+            name: admin || me ? p.name : maskName(p.name), mk: await mk(p.name), me });
+        }
+        rosters[r.id] = { entries, importedAt: r.updated_at };
+        const mine = viewer.name ? people.find(p => normName(p.name) === normName(viewer.name)) || null : null;
+        attendance[r.id] = { calendar: meta.calendar || [], weeks: meta.weeks || [], lastRecord: meta.lastRecord || "", mine };
+      }
       return J({
         ok: true,
         admin,
-        courses: cs.results.map(r => ({ id: r.id, ...JSON.parse(r.data) })),
+        courses,
         signups,
         rosters,
+        attendance,
       });
     }
     if (method === "GET" && path.startsWith("image/")) {
