@@ -29,6 +29,7 @@
 body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.6}
 .wrap{max-width:860px;margin:0 auto;padding-inline:16px;padding-block:0 64px}
 /* 固定在畫面上方的標題＋分頁 */
+html,body{overflow-anchor:none}
 .sticky-top{position:sticky;top:0;z-index:20;background:var(--bg);padding-top:calc(20px + env(safe-area-inset-top,0px));margin-bottom:20px;transition:box-shadow .2s ease}
 .sticky-top.stuck{box-shadow:0 8px 16px -14px var(--shadow)}
 .sticky-top header.top{margin-bottom:12px}
@@ -301,7 +302,16 @@ footer.foot{margin-top:48px;padding-top:16px;border-top:1px solid var(--line);di
 <script>
 (function(){
   var bar=document.getElementById("stickyTop"), root=document.documentElement;
-  function sync(){ root.style.setProperty("--stick-h", bar.offsetHeight+"px"); var y=window.scrollY; if(y>48) bar.classList.add("stuck"); else if(y<4) bar.classList.remove("stuck"); }
+  /* 縮小標頭時用 margin 補回高度，讓下方內容位置不變；否則瀏覽器會跟著調整捲動位置，造成來回跳動 */
+  var fullH=0;
+  function sync(){
+    var y=window.scrollY, was=bar.classList.contains("stuck");
+    if(!was) fullH=bar.offsetHeight;
+    var want = was ? y>=4 : y>48;
+    if(want!==was) bar.classList.toggle("stuck", want);
+    bar.style.marginBottom = want ? (20 + Math.max(0, fullH - bar.offsetHeight))+"px" : "";
+    root.style.setProperty("--stick-h", bar.offsetHeight+"px");
+  }
   window.addEventListener("scroll", sync, {passive:true});
   window.addEventListener("resize", sync);
   if(window.ResizeObserver) new ResizeObserver(sync).observe(bar);
