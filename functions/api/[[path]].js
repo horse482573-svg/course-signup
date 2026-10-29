@@ -22,7 +22,7 @@ const profileOk = p => p.unit && p.division && p.name && p.title;
 
 const COURSE_FIELDS = {
   title: 80, signupUrl: 2000, date: 10, time: 40, location: 60, instructor: 40, status: 10,
-  summary: 140, detail: 3000, poster: 40, payQr: 40, payNote: 1000, kind: 10, endDate: 10,
+  summary: 140, detail: 3000, poster: 40, payQr: 40, payNote: 1000, kind: 10, endDate: 10, mealLabel: 10, drinkLabel: 10,
 };
 function cleanCourse(c) {
   const o = {};

@@ -137,6 +137,9 @@ function sameP(a,b){
 }
 const entryOf = o => ({...profileOf(o), meal:o?.meal||"", drink:o?.drink||"", award:o?.award||"", mk:o?.mk, me:o?.me});
 const isMeal = c => c && c.kind==="meal";
+/* 餐點欄位名稱：跟著匯入名單的表頭（早餐／午餐／下午茶…），沒設定時用預設 */
+const mealL = c => (c && c.mealLabel) || "早餐";
+const drinkL = c => (c && c.drinkLabel) || "飲料";
 const isAward = c => c && c.kind==="award";
 function myMeal(c){ if(!isMeal(c) || !S.me) return null; return officialFor(c.id).find(isMeP) || null; }
 const officialFor = cid => (S.rosters[cid] && S.rosters[cid].entries) || [];
@@ -328,16 +331,17 @@ function courseCard(c){
 function mealBox(c, state){
   const m = myMeal(c);
   if(m && (m.meal||m.drink)) return `<div class="mealbox"><span class="mealbox-h">你報名時點的餐點</span>
-    <div class="mealbox-row">${m.meal?`<span><small>早餐</small><b>${esc(m.meal)}</b></span>`:""}${m.drink?`<span><small>飲料</small><b>${esc(m.drink)}</b></span>`:""}</div></div>`;
-  if(!S.me) return `<div class="mealbox"><span class="mealbox-h">這堂課附餐點</span><span class="who">點右上角「填寫我的報名資料」，就能看到你點的早餐和飲料。</span></div>`;
+    <div class="mealbox-row">${m.meal?`<span><small>${esc(mealL(c))}</small><b>${esc(m.meal)}</b></span>`:""}${m.drink?`<span><small>${esc(drinkL(c))}</small><b>${esc(m.drink)}</b></span>`:""}</div></div>`;
+  if(!S.me) return `<div class="mealbox"><span class="mealbox-h">這堂課附餐點</span><span class="who">點右上角「填寫我的報名資料」，就能看到你點的${esc(mealL(c))}${c.drinkLabel||c.mealLabel?"":"和飲料"}。</span></div>`;
   if(state) return `<div class="mealbox"><span class="mealbox-h">這堂課附餐點</span><span class="who">名單上還沒有你的餐點紀錄，請洽課程舉辦人。</span></div>`;
   return "";
 }
-function tallyHTML(list){
+function tallyHTML(list, labels){
+  labels = labels || {};
   const cnt = k => { const m=new Map(); for(const p of list){ const v=(p[k]||"").trim(); if(v) m.set(v,(m.get(v)||0)+1); } return [...m].sort((a,b)=>b[1]-a[1]); };
   const t = (title, arr) => arr.length ? `<div class="tally"><h4>${title}</h4>${arr.map(([k,n])=>`<div class="tally-row"><span>${esc(k)}</span><span class="num">${n}</span></div>`).join("")}<div class="tally-row tally-sum"><span>合計</span><span class="num">${arr.reduce((s,x)=>s+x[1],0)}</span></div></div>` : "";
-  const a = t("早餐", cnt("meal")), b = t("飲料", cnt("drink"));
-  return a||b ? `<div class="tallies">${a}${b}</div>` : `<p class="hint">匯入含「早餐」「飲料」欄的名單後，這裡會自動統計訂餐數量。</p>`;
+  const a = t(esc(labels.meal||"早餐"), cnt("meal")), b = t(esc(labels.drink||"飲料"), cnt("drink"));
+  return a||b ? `<div class="tallies">${a}${b}</div>` : `<p class="hint">匯入含「早餐」「午餐」「飲料」「下午茶」等欄的名單後，這裡會自動統計訂餐數量。</p>`;
 }
 
 /* ---------- 公司獎勵總覽 ---------- */
@@ -483,6 +487,8 @@ function adminView(){
       <div class="grid">
         <label class="full">課程名稱 *<input id="f-title" required maxlength="80" value="${esc(c.title)}" placeholder="例如：Excel 樞紐分析實戰"></label>
         <label class="full">課程類型<select id="f-kind"><option value="general"${c.kind!=="meal"?" selected":""}>一般專班</option><option value="meal"${c.kind==="meal"?" selected":""}>有餐點的專班（名單可匯入早餐、飲料，同事看得到自己點的餐）</option></select></label>
+        <label>餐點欄名稱（有餐點的專班）<input id="f-meal-l" maxlength="10" value="${esc(c.mealLabel)}" placeholder="早餐、午餐、便當…"></label>
+        <label>第二欄名稱<input id="f-drink-l" maxlength="10" value="${esc(c.drinkLabel)}" placeholder="飲料、下午茶…"></label>
         <label class="full check"><input type="checkbox" id="f-hot" ${c.hot?"checked":""}> 標示為「近期最火」（課程總覽的海報會出現火紅標籤）</label>
         <label class="full">報名連結（選填）<input id="f-url" type="text" inputmode="url" autocomplete="off" maxlength="2000" value="${esc(c.signupUrl)}" placeholder="貼上 Google 表單或其他報名系統的網址，例如 https://forms.gle/…">
           <span class="hint">留空：卡片不顯示報名按鈕，名單以你匯入的官方名單為準。填入網址：卡片會出現「前往報名」按鈕，同事報完名回來按「我已完成報名」，你再匯入官方名單核對。</span></label>
@@ -523,10 +529,10 @@ function courseAdminRow(c){
       ${ext?`<div class="ext" style="margin-bottom:4px">外部報名：<a href="${esc(c.signupUrl)}" target="_blank" rel="noopener noreferrer">${esc(c.signupUrl)}</a></div>
         <div class="hint" style="margin-bottom:12px">${info?`官方名單 ${officialFor(c.id).length} 人，${fmtTime(info.importedAt)} 匯入`:"尚未匯入官方名單"}${nPend?` · <b style="color:var(--warn)">${nPend} 人自行回報、尚未在官方名單中找到</b>`:""}</div>`
         :`<div class="hint" style="margin-bottom:12px">本站報名暫停中 · ${info?`官方名單 ${officialFor(c.id).length} 人，${fmtTime(info.importedAt)} 匯入`:"尚未匯入官方名單"}</div>`}
-      ${r.length?`<div class="tbl"><table><thead><tr><th>#</th><th>業務單位</th><th>事業部</th><th>姓名</th><th>職稱</th>${isMeal(c)?"<th>早餐</th><th>飲料</th>":""}<th>狀態</th><th>回報時間</th></tr></thead><tbody>
+      ${r.length?`<div class="tbl"><table><thead><tr><th>#</th><th>業務單位</th><th>事業部</th><th>姓名</th><th>職稱</th>${isMeal(c)?`<th>${esc(mealL(c))}</th><th>${esc(drinkL(c))}</th>`:""}<th>狀態</th><th>回報時間</th></tr></thead><tbody>
         ${r.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.unit||"—")}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.title||"—")}</td>${isMeal(c)?`<td>${esc(p.meal||"—")}</td><td>${esc(p.drink||"—")}</td>`:""}<td><span class="pill ${p.src==="self"?"pending":"mine"}">${SRC_LABEL[p.src]}</span></td><td class="t">${fmtTime(p.at)||"—"}</td></tr>`).join("")}
       </tbody></table></div>`:`<p class="who" style="margin:0">尚無人報名</p>`}
-      ${isMeal(c)?tallyHTML(officialFor(c.id)):""}
+      ${isMeal(c)?tallyHTML(officialFor(c.id), {meal:mealL(c), drink:drinkL(c)}):""}
       ${S.importing===c.id?importBox(c):""}
       <div class="actions" style="margin-top:12px">
         ${S.importing!==c.id?`<button class="btn primary" data-act="imp-open" data-id="${esc(c.id)}">${info?"重新匯入官方名單":"匯入官方名單"}</button>`:""}
@@ -631,10 +637,10 @@ function importBox(c){
       ${rows.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.award||"—")}</td><td><button type="button" class="x" data-act="imp-del" data-i="${i}" aria-label="刪除這一列">×</button></td></tr>`).join("")}
       </tbody></table></div>`:""}`;
     else preview = `<div><b>辨識結果：${rows.length} 人</b>　<span class="who">與自行回報相符 ${hit} 人 · 自行回報但不在這份名單 ${self.length-hit} 人</span></div>
-      ${rows.length?`<div class="tbl"><table><thead><tr><th>#</th><th>業務單位</th><th>事業部</th><th>姓名</th><th>職稱</th>${isMeal(c)?"<th>早餐</th><th>飲料</th>":""}<th></th></tr></thead><tbody>
+      ${rows.length?`<div class="tbl"><table><thead><tr><th>#</th><th>業務單位</th><th>事業部</th><th>姓名</th><th>職稱</th>${isMeal(c)?(l=>`<th>${esc(l.meal)}</th><th>${esc(l.drink)}</th>`)(impLabels(c)):""}<th></th></tr></thead><tbody>
       ${rows.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.unit||"—")}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.title||"—")}</td>${isMeal(c)?`<td>${esc(p.meal||"—")}</td><td>${esc(p.drink||"—")}</td>`:""}<td><button type="button" class="x" data-act="imp-del" data-i="${i}" aria-label="刪除這一列">×</button></td></tr>`).join("")}
       </tbody></table></div>`:""}
-      ${isMeal(c)?tallyHTML(rows):""}`;
+      ${isMeal(c)?tallyHTML(rows, impLabels(c)):""}`;
     preview += `
       <p class="hint">請檢查結果，有誤的列可以按 × 刪除，或按「重新貼上」修改來源文字。</p>
       ${rosterInfo(c.id)?`<div class="seg"><label><input type="radio" name="impMode" value="replace" ${S.impMode==="replace"?"checked":""}> 取代目前的${isAward(c)?"達成":"官方"}名單</label><label><input type="radio" name="impMode" value="merge" ${S.impMode==="merge"?"checked":""}> 加入目前的${isAward(c)?"達成":"官方"}名單（合併、去除重複）</label></div>`:""}
@@ -673,7 +679,16 @@ function localParse(text){
   if(!lines.length) return null;
   const head = splitLine(lines[0]);
   const col = re => head.findIndex(h=>re.test(h));
-  const ix = {name:col(/姓名|名字|^name$/i), unit:col(/業務單位|單位|據點|地區|分公司/), division:col(/事業部|部門/), title:col(/職稱|職位|職級/), meal:col(/早餐|餐點|主餐/), drink:col(/飲料|飲品/), award:col(/達成|獎勵|獎項/)};
+  const ix = {name:col(/姓名|名字|^name$/i), unit:col(/業務單位|單位|據點|地區|分公司/), division:col(/事業部|部門/), title:col(/職稱|職位|職級/), meal:-1, drink:-1, award:col(/達成|獎勵|獎項/)};
+  // 餐點欄：第一個餐點類表頭當第一欄、飲料類（或第二個餐點類）當第二欄；欄名就用表頭文字
+  const FOOD=/早餐|午餐|晚餐|下午茶|點心|餐點|主餐|餐盒|便當|葷素|飲料|飲品|咖啡|茶飲/, DRINK=/飲料|飲品|咖啡|茶飲|下午茶/;
+  const food = head.map((h,i)=>FOOD.test(h)?i:-1).filter(i=>i>=0);
+  ix.drink = food.find(i=>DRINK.test(head[i])) ?? -1;
+  ix.meal = food.find(i=>i!==ix.drink) ?? -1;
+  if(ix.meal<0 && food.length>1) ix.meal = food[0];
+  if(ix.drink<0) ix.drink = food.find(i=>i!==ix.meal) ?? -1;
+  const lab = i => i>=0 ? (head[i].replace(/選項|選擇|內容|品項|[（(].*?[）)]/g,"").trim() || head[i]).slice(0,10) : "";
+  S.impLabels = {meal:lab(ix.meal), drink:lab(ix.drink)};
   if(ix.name>=0){
     return lines.slice(1).map(l=>{ const f=splitLine(l); const g=k=>ix[k]>=0?(f[ix[k]]||""):""; return {unit:g("unit"),division:g("division"),name:g("name"),title:g("title"),meal:g("meal"),drink:g("drink"),award:g("award")}; });
   }
@@ -739,7 +754,8 @@ async function saveCourse(){
   }
   const course = { title, signupUrl, kind:$("#f-kind").value, hot:$("#f-hot").checked, date:v("f-date"), time:v("f-time"), location:v("f-location"), instructor:v("f-instructor"),
     capacity:Math.max(0, parseInt(v("f-capacity")||"0",10)||0), status:$("#f-status").value, summary:v("f-summary"),
-    detail:$("#f-detail").value.trim(), poster:S.draft.poster||"", payQr:S.draft.payQr||"", payNote:$("#f-paynote").value.trim() };
+    detail:$("#f-detail").value.trim(), poster:S.draft.poster||"", payQr:S.draft.payQr||"", payNote:$("#f-paynote").value.trim(),
+    mealLabel:($("#f-meal-l")?.value||"").trim(), drinkLabel:($("#f-drink-l")?.value||"").trim() };
   const old = S.editing==="new" ? {} : (S.courses.find(x=>x.id===S.editing)||{});
   if(S.editing!=="new") course.id = S.editing;
   const btn=$("#courseForm button[type=submit]"); if(btn) btn.disabled=true;
@@ -770,13 +786,14 @@ async function saveAward(v, title){
 }
 function csv(courses){
   const q=s=>`"${String(s??"").replace(/"/g,'""')}"`;
-  const lines=[["課程","日期","業務單位","事業部名稱","姓名","職稱","早餐","飲料","達成獎勵","狀態","回報時間"].map(q).join(",")];
+  const lines=[["課程","日期","業務單位","事業部名稱","姓名","職稱","餐點","飲料／第二欄","達成獎勵","狀態","回報時間"].map(q).join(",")];
   for(const c of courses) for(const r of peopleFor(c)) lines.push([c.title,c.date,r.unit,r.division,r.name,r.title,r.meal||"",r.drink||"",r.award||"",SRC_LABEL[r.src],fmtTime(r.at)].map(q).join(","));
   const url=URL.createObjectURL(new Blob(["﻿"+lines.join("\r\n")],{type:"text/csv"}));
   const a=document.createElement("a"); a.href=url; a.download=(courses.length===1?courses[0].title:"全部課程")+"-報名名單.csv";
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-function closeImport(){ S.importing=null; S.impRows=null; S.impText=""; S.impMode="replace"; }
+function closeImport(){ S.importing=null; S.impRows=null; S.impText=""; S.impMode="replace"; S.impLabels=null; }
+const impLabels = c => ({meal:(S.impLabels&&S.impLabels.meal)||mealL(c), drink:(S.impLabels&&S.impLabels.drink)||drinkL(c)});
 function adminLogout(){ S.adminKey=""; ss.del("cs-admin"); S.isOwner=false; S.editing=null; closeImport(); if(S.tab==="admin") S.tab="shelf"; render(); refresh(true); }
 
 document.addEventListener("click", async ev=>{
@@ -833,6 +850,10 @@ document.addEventListener("click", async ev=>{
     S.impBusy=true; render();
     try{
       await api("admin/roster",{courseId:id, entries});
+      if(isMeal(c) && S.impLabels && (S.impLabels.meal||S.impLabels.drink)){
+        const l = impLabels(c);
+        if(l.meal!==mealL(c) || l.drink!==drinkL(c)) await api("admin/course",{course:{...c, mealLabel:l.meal, drinkLabel:l.drink}});
+      }
       const hit = rosterFor(id).filter(p=>entries.some(o=>sameP(p,o))).length;
       toast(`已匯入 ${entries.length} 人，與自行回報相符 ${hit} 人`); closeImport();
     }catch(e){ toast(errMsg(e)); }
