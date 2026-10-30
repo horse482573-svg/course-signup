@@ -473,7 +473,7 @@ function awardAdminRow(a){
     <div class="actions" style="margin-top:12px">
       ${S.importing!==a.id?`<button class="btn primary" data-act="imp-open" data-id="${esc(a.id)}">${info?"更新達成名單":"匯入達成名單"}</button>`:""}
       <button class="btn" data-act="edit" data-id="${esc(a.id)}">編輯</button>
-      ${list.length?`<button class="btn" data-act="csv" data-id="${esc(a.id)}">下載名單 CSV</button>`:""}
+      ${list.length?`<button class="btn" data-act="signsheet" data-id="${esc(a.id)}">簽到表</button><button class="btn" data-act="csv" data-id="${esc(a.id)}">下載名單 CSV</button>`:""}
       <button class="btn link" data-act="goto-award" data-id="${esc(a.id)}">查看同事看到的畫面</button>
       <button class="btn danger" data-act="del" data-id="${esc(a.id)}">刪除</button>
     </div>${del}
@@ -540,7 +540,7 @@ function courseAdminRow(c){
         ${S.importing!==c.id?`<button class="btn primary" data-act="imp-open" data-id="${esc(c.id)}">${info?"重新匯入官方名單":"匯入官方名單"}</button>`:""}
         <button class="btn" data-act="edit" data-id="${esc(c.id)}">編輯</button>
         <button class="btn" data-act="toggle" data-id="${esc(c.id)}">${c.status==="closed"?"重新開放報名":"截止報名"}</button>
-        ${r.length?`<button class="btn" data-act="csv" data-id="${esc(c.id)}">下載名單 CSV</button>`:""}
+        ${r.length?`<button class="btn" data-act="signsheet" data-id="${esc(c.id)}">簽到表</button><button class="btn" data-act="csv" data-id="${esc(c.id)}">下載名單 CSV</button>`:""}
         <button class="btn danger" data-act="del" data-id="${esc(c.id)}">刪除</button>
       </div>${del}
     </section>`;
@@ -808,6 +808,7 @@ document.addEventListener("click", async ev=>{
   const b = ev.target.closest("[data-act]"); if(!b) return;
   const id=b.dataset.id, act=b.dataset.act;
   if(act==="goto") gotoCourse(id);
+  else if(act==="signsheet") openSignSheet(id);
   else if(act==="skip"){ toggleSkip(id); render(); toast(S.skip.has(id)?"已設為不再提醒，課程移到後面":"已恢復提醒"); }
   else if(act==="join"){ S.pendingJoin=id; if(!S.me) closeProfile(); render(); }
   else if(act==="join-yes") join(id);
