@@ -321,9 +321,10 @@ function courseCard(c){
       <div class="actions">${action}</div>
       ${isMeal(c)?mealBox(c, state):""}
       <div class="roster">
-        <h4>報名名單${rosterInfo(c.id)?` · 已於 ${fmtTime(rosterInfo(c.id).importedAt)} 核對官方名單`:""}</h4>
-        ${n?`<div class="plist">${people.map(r=>`<span class="pcell${isMeP(r)?" me":""}${r.confirmed?"":" pend"}"><span class="pdiv" title="${esc(r.division||"")}">${esc(r.division||"—")}</span><span class="pname">${esc(shownName(r))}</span>${r.confirmed?"":`<small>待確認</small>`}${(()=>{ const t=[r.note,r.meal,r.drink].filter(Boolean).join(" · "); return t?`<span class="pnote">${esc(t)}</span>`:""; })()}</span>`).join("")}</div>`
-           :`<span class="who">還沒有人報名，成為第一位吧。</span>`}
+        ${(()=>{ const lu=c.listUnit; S._shown = lu ? people.filter(r=>normUnit(r.unit)===normUnit(lu) || isMeP(r)) : people; return ""; })()}
+        <h4>報名名單${c.listUnit?`（${esc(c.listUnit)}業務中心 ${people.filter(r=>normUnit(r.unit)===normUnit(c.listUnit)).length} 人，全部共 ${n} 人）`:""}${rosterInfo(c.id)?` · 已於 ${fmtTime(rosterInfo(c.id).importedAt)} 核對官方名單`:""}</h4>
+        ${S._shown.length?`<div class="plist">${S._shown.map(r=>`<span class="pcell${isMeP(r)?" me":""}${r.confirmed?"":" pend"}"><span class="pdiv" title="${esc(r.division||"")}">${esc(r.division||"—")}</span><span class="pname">${esc(shownName(r))}</span>${r.confirmed?"":`<small>待確認</small>`}${(()=>{ const t=[r.note,r.meal,r.drink].filter(Boolean).join(" · "); return t?`<span class="pnote">${esc(t)}</span>`:""; })()}</span>`).join("")}</div>`
+           :`<span class="who">${n?`目前${esc(c.listUnit||"")}業務中心還沒有人報名。`:"還沒有人報名，成為第一位吧。"}</span>`}
       </div>
     </div>
   </article>`;
@@ -496,6 +497,7 @@ function adminView(){
         <label>時間<input id="f-time" maxlength="40" value="${esc(c.time)}" placeholder="14:00–16:00"></label>
         <label>地點<input id="f-location" maxlength="60" value="${esc(c.location)}" placeholder="3F 大會議室 / 線上"></label>
         <label>講師<input id="f-instructor" maxlength="40" value="${esc(c.instructor)}"></label>
+        <label>名單只顯示這個業務中心（選填）<input id="f-listunit" maxlength="20" value="${esc(c.listUnit)}" placeholder="例如：高雄；人數仍算全部"></label>
         <label>名額（0 = 不限）<input id="f-capacity" type="number" min="0" step="1" value="${esc(c.capacity??0)}"></label>
         <label>報名狀態<select id="f-status"><option value="open"${c.status!=="closed"?" selected":""}>開放報名</option><option value="closed"${c.status==="closed"?" selected":""}>截止報名</option></select></label>
         <label class="full">一句話簡介<input id="f-summary" maxlength="140" value="${esc(c.summary)}" placeholder="這堂課能帶走什麼"></label>
@@ -679,7 +681,9 @@ function localParse(text){
   if(!lines.length) return null;
   const head = splitLine(lines[0]);
   const col = re => head.findIndex(h=>re.test(h));
-  const ix = {name:col(/姓名|名字|^name$/i), unit:col(/業務單位|單位|據點|地區|分公司/), division:col(/事業部|部門/), title:col(/職稱|職位|職級/), meal:-1, drink:-1, award:col(/達成|獎勵|獎項/)};
+  // 有兩欄「姓名」時（遮名＋完整姓名），取最右邊那欄
+  const lastCol = re => { let r=-1; head.forEach((h,i)=>{ if(re.test(h)) r=i; }); return r; };
+  const ix = {name:lastCol(/姓名|名字|^name$/i), unit:col(/業務中心|業務單位|單位|據點|地區|分公司/), division:col(/事業部|部門/), title:col(/職稱|職位|職級/), meal:-1, drink:-1, award:col(/達成|獎勵|獎項/)};
   // 餐點欄：第一個餐點類表頭當第一欄、飲料類（或第二個餐點類）當第二欄；欄名就用表頭文字
   const FOOD=/早餐|午餐|晚餐|下午茶|點心|餐點|主餐|餐盒|便當|葷素|飲料|飲品|咖啡|茶飲/, DRINK=/飲料|飲品|咖啡|茶飲|下午茶/;
   const food = head.map((h,i)=>FOOD.test(h)?i:-1).filter(i=>i>=0);
@@ -689,8 +693,10 @@ function localParse(text){
   if(ix.drink<0) ix.drink = food.find(i=>i!==ix.meal) ?? -1;
   const lab = i => i>=0 ? (head[i].replace(/選項|選擇|內容|品項|[（(].*?[）)]/g,"").trim() || head[i]).slice(0,10) : "";
   S.impLabels = {meal:lab(ix.meal), drink:lab(ix.drink)};
+  const statusCol = ix.title<0;
+  if(statusCol) ix.title = col(/報名狀態|狀態|備註|組別|梯次/);
   if(ix.name>=0){
-    return lines.slice(1).map(l=>{ const f=splitLine(l); const g=k=>ix[k]>=0?(f[ix[k]]||""):""; return {unit:g("unit"),division:g("division"),name:g("name"),title:g("title"),meal:g("meal"),drink:g("drink"),award:g("award")}; });
+    return lines.slice(1).map(l=>{ const f=splitLine(l); const g=k=>ix[k]>=0?(f[ix[k]]||""):""; return {unit:g("unit"),division:g("division"),name:g("name"),title:(t=>statusCol&&/^(已)?完成$/.test(t)?"":t)(g("title")),meal:g("meal"),drink:g("drink"),award:g("award")}; });
   }
   // 沒有表頭：4 欄當作 業務單位/事業部/姓名/職稱，1 欄當作姓名
   const rows = lines.map(l=>l.includes("\t")||l.includes(",") ? splitLine(l) : l.split(/\s+/));
@@ -755,7 +761,7 @@ async function saveCourse(){
   const course = { title, signupUrl, kind:$("#f-kind").value, hot:$("#f-hot").checked, date:v("f-date"), time:v("f-time"), location:v("f-location"), instructor:v("f-instructor"),
     capacity:Math.max(0, parseInt(v("f-capacity")||"0",10)||0), status:$("#f-status").value, summary:v("f-summary"),
     detail:$("#f-detail").value.trim(), poster:S.draft.poster||"", payQr:S.draft.payQr||"", payNote:$("#f-paynote").value.trim(),
-    mealLabel:($("#f-meal-l")?.value||"").trim(), drinkLabel:($("#f-drink-l")?.value||"").trim() };
+    listUnit:($("#f-listunit")?.value||"").trim(), mealLabel:($("#f-meal-l")?.value||"").trim(), drinkLabel:($("#f-drink-l")?.value||"").trim() };
   const old = S.editing==="new" ? {} : (S.courses.find(x=>x.id===S.editing)||{});
   if(S.editing!=="new") course.id = S.editing;
   const btn=$("#courseForm button[type=submit]"); if(btn) btn.disabled=true;
