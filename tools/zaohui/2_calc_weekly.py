@@ -8,7 +8,8 @@ def ok(n,d):
     if d=="2026-10-16" and n in GONG["10/16"]: return True
     return days.get(d,{}).get(n)=="出席"
 def real(n,d): return d not in HOL and days.get(d,{}).get(n)=="出席"
-names=A["names"]; res={}
+EXCLUDE={"陳櫻燕","蘇宜君"}  # 行政人員，不記入
+names=[n for n in A["names"] if n not in EXCLUDE]; res={}
 for n in names:
     w=[]; 
     for lab,ds in WEEKS:
