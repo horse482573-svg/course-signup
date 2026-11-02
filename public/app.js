@@ -360,7 +360,10 @@ function awardCard(a){
   const st = awardStatus(a), list = officialFor(a.id), info = rosterInfo(a.id), mine = myAwards(a), k = S.me ? S.me : null;
   const left = daysLeft(a.endDate);
   const period = (a.date||a.endDate) ? `${fmtDay(a.date)||"即日起"} – ${fmtDay(a.endDate)||"另行公告"}` : "請見注意事項";
-  const counts = new Map(); for(const p of list){ const v=(p.award||"").trim(); if(v) counts.set(v,(counts.get(v)||0)+1); }
+  const counts = new Map(); for(const p of list){ const v=(p.award||"").split(/[：:]/)[0].trim(); if(v) counts.set(v,(counts.get(v)||0)+1); }
+  const won = list.filter(p=>(p.award||"").trim()).length;
+  const hasDays = list.some(p=>Number.isFinite(p.days));
+  const star = p => a.starDays>0 && Number.isFinite(p.days) && p.days>=a.starDays;
   let me = "";
   if(mine.length) me = `<div class="mealbox award-me"><span class="mealbox-h">恭喜你已達成</span><div class="award-me-list">${mine.map(m=>`<b>${esc(m.award||"本獎勵")}</b>`).join("")}</div></div>`;
   else if(!S.me) me = `<div class="mealbox"><span class="who">點右上角「填寫我的報名資料」，就能看到你是否已達成這個獎勵。</span></div>`;
@@ -375,10 +378,11 @@ function awardCard(a){
       ${me}
       ${a.detail?`<div class="award-notes"><h4>獎勵注意事項</h4><p>${esc(a.detail)}</p></div>`:""}
       <div class="roster">
-        <h4>目前達成名單 · ${list.length} 人${info?` · ${fmtTime(info.importedAt)} 更新`:""}</h4>
+        <h4>目前達成名單 · ${won} 人${won<list.length?`（共列出 ${list.length} 人）`:""}${a.asOf?` · 統計至 ${esc(a.asOf)}`:""}${info?` · ${fmtTime(info.importedAt)} 更新`:""}</h4>
+        ${hasDays && a.starDays>0?`<p class="star-legend">⭐ = 出席天數超過${esc(a.starLabel||"標準")}（目前 ${a.starDays} 天）</p>`:""}
         ${counts.size>1?`<div class="chips" style="margin-bottom:8px">${[...counts].map(([n,c])=>`<span class="chip">${esc(n)}<small>${c} 人</small></span>`).join("")}</div>`:""}
-        ${list.length?`<div class="tbl"><table><thead><tr><th>#</th><th>事業部</th><th>姓名</th><th>達成獎勵</th></tr></thead><tbody>
-          ${list.map((p,i)=>`<tr class="${isMeP(p)?"row-me":""}"><td class="t">${i+1}</td><td>${esc(p.division||"—")}</td><td>${esc(shownName(p))}</td><td>${esc(p.award||"—")}</td></tr>`).join("")}
+        ${list.length?`<div class="tbl"><table><thead><tr><th>#</th><th>事業部</th><th>姓名</th>${hasDays?"<th>出席天數</th>":""}<th>達成獎勵</th></tr></thead><tbody>
+          ${list.map((p,i)=>`<tr class="${isMeP(p)?"row-me":""}"><td class="t">${i+1}</td><td>${esc(p.division||"—")}</td><td>${esc(shownName(p))}</td>${hasDays?`<td class="days">${Number.isFinite(p.days)?`${p.days} 天${star(p)?' <span class="star" aria-label="超過標準">⭐</span>':""}`:"—"}</td>`:""}<td class="aw">${esc(p.award||"—")}</td></tr>`).join("")}
         </tbody></table></div>`:`<span class="who">${st.key==="soon"?"獎勵尚未開始。":"名單整理中，公布後會顯示在這裡。"}</span>`}
       </div>
     </div>
@@ -466,8 +470,8 @@ function awardAdminRow(a){
       <span class="seats"><span>已達成 <span class="num">${list.length}</span> 人</span></span>
     </div>
     <div class="meta" style="margin:4px 0 12px">獎勵期間：${esc(fmtDay(a.date)||"即日起")} – ${esc(fmtDay(a.endDate)||"另行公告")}${info?` · 名單 ${fmtTime(info.importedAt)} 匯入`:" · 尚未匯入達成名單"}</div>
-    ${list.length?`<div class="tbl"><table><thead><tr><th>#</th><th>事業部</th><th>姓名</th><th>達成獎勵</th></tr></thead><tbody>
-      ${list.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.award||"—")}</td></tr>`).join("")}
+    ${list.length?`<div class="tbl"><table><thead><tr><th>#</th><th>事業部</th><th>姓名</th><th>達成獎勵</th>${list.some(p=>Number.isFinite(p.days))?"<th>出席天數</th>":""}</tr></thead><tbody>
+      ${list.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.award||"—")}</td>${list.some(q=>Number.isFinite(q.days))?`<td>${Number.isFinite(p.days)?p.days+" 天"+(a.starDays>0&&p.days>=a.starDays?" ⭐":""):"—"}</td>`:""}</tr>`).join("")}
     </tbody></table></div>`:""}
     ${S.importing===a.id?importBox(a):""}
     <div class="actions" style="margin-top:12px">

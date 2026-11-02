@@ -17,7 +17,12 @@ function cleanProfile(p) {
   p = p || {};
   return { unit: str(p.unit, 20), division: str(p.division, 30), name: str(p.name, 30), title: str(p.title, 20) };
 }
-const cleanEntry = p => ({ ...cleanProfile(p), meal: str(p?.meal, 60), drink: str(p?.drink, 40), award: str(p?.award, 80) });
+const cleanEntry = p => {
+  const o = { ...cleanProfile(p), meal: str(p?.meal, 60), drink: str(p?.drink, 40), award: str(p?.award, 80) };
+  const d = parseInt(p?.days, 10);
+  if (Number.isFinite(d) && d >= 0 && d < 1000) o.days = d; // 出席天數（全勤王等獎勵用）
+  return o;
+};
 const profileOk = p => p.unit && p.division && p.name && p.title;
 
 const COURSE_FIELDS = {
@@ -29,6 +34,11 @@ function cleanCourse(c) {
   for (const [k, n] of Object.entries(COURSE_FIELDS)) o[k] = str(c?.[k], n);
   o.hot = c?.hot === true;
   o.listOnly = c?.listOnly === true;
+  // 出席天數星星：天數 ≥ starDays 的人加 ⭐，starLabel 是說明文字裡的比較對象
+  const sd = parseInt(c?.starDays, 10);
+  o.starDays = Number.isFinite(sd) && sd > 0 ? sd : 0;
+  o.starLabel = str(c?.starLabel, 20);
+  o.asOf = str(c?.asOf, 20);
   o.capacity = Math.max(0, Math.min(100000, parseInt(c?.capacity, 10) || 0));
   if (o.status !== "closed") o.status = "open";
   if (o.kind !== "meal" && o.kind !== "award") o.kind = "general";
