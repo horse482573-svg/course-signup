@@ -69,11 +69,12 @@
     if(SS.sort==="div") list = [...list].sort((a,b)=>String(a.division||"").localeCompare(String(b.division||""),"zh-Hant")||String(a.name||"").localeCompare(String(b.name||""),"zh-Hant"));
     return list;
   }
+  const signOn = c => !(SS.signOff ?? c.signOff);
   const signLab = c => (SS.signLabel ?? c.signLabel) || (isAward(c) ? "簽收" : "簽到");
   const cellText = (p, k) => k==="award" ? shortAward(p.award) : String(colVal(p, k)||"");
   // 依內容長度估欄寬（mm）
   function widthOf(col, rows){
-    if(col.k==="division") return 18;
+    if(col.k==="division") return Math.min(30, Math.max(18, Math.max(...rows.map(p=>String(p.division||"").length), 3) * 3.9 + 3));
     if(col.k==="name") return 17;
     const longest = Math.max(col.label.length, ...rows.map(p=>cellText(p,col.k).length));
     const base = col.blank ? Math.max(18, col.label.length*4.2) : Math.min(26, Math.max(13, longest*2.9));
@@ -85,26 +86,29 @@
     const cols = (SS.cols || colsOf(c)).filter(x=>x.sign);
     // 欄寬：序號 8mm、簽名至少 24mm；放不下就改單欄
     const widths = cols.map(x=>widthOf(x, rows));
-    const need = 8 + widths.reduce((a,b)=>a+b,0) + 22;
+    const sg = signOn(c) ? 22 : 0;
+    const need = 8 + widths.reduce((a,b)=>a+b,0) + sg;
     const single = need > 93;
     const avail = single ? 189 : 93;
     // 放不下就等比縮；單欄時空間多，資料欄適度放寬（簽名欄至少 50mm）
-    const scale = need > avail ? (avail - 8 - 22) / (need - 8 - 22) : single ? Math.max(1, Math.min(1.6, (avail - 8 - 50) / (need - 8 - 22))) : 1;
+    const scale = need > avail ? (avail - 8 - sg) / (need - 8 - sg) : single && sg ? Math.max(1, Math.min(1.6, (avail - 8 - 50) / (need - 8 - sg))) : 1;
     const per = single ? 20 : PER_PAGE;
     const pages = Math.max(1, Math.ceil(n / per));
     const perPage = Math.max(1, Math.ceil(n / pages));
     const perCol = single ? Math.max(10, perPage) : Math.max(10, Math.ceil(perPage / 2));
     // 表格區高度約 240mm（扣掉標題、頁尾、表頭）
     const rowH = Math.max(9, Math.min(20, Math.floor((236 / perCol) * 10) / 10));
-    const kind = isAward(c) ? "領獎簽收表" : "簽到表";
+    const kind = !signOn(c) ? "名單" : isAward(c) ? "領獎簽收表" : "簽到表";
     const dShort = (!isAward(c) && c.date) ? (d=>`${d.getMonth()+1}/${d.getDate()}(${WD[d.getDay()]})`)(new Date(c.date+"T00:00:00")) : "";
     const sub = [isAward(c) ? "" : c.time, isAward(c) ? "" : c.location].filter(Boolean).join("　");
-    const colgroup = `<col style="width:8mm">${widths.map(w=>`<col style="width:${(w*scale).toFixed(1)}mm">`).join("")}<col>`;
-    const head = `<tr><th></th>${cols.map(x=>`<th>${esc(x.label)}</th>`).join("")}<th>${esc(signLab(c))}</th></tr>`;
+    // 不印簽到欄時，最後一個資料欄自動撐滿剩下的寬度
+    const colgroup = `<col style="width:8mm">${widths.map((w,i)=>!sg && i===widths.length-1 ? "<col>" : `<col style="width:${(w*scale).toFixed(1)}mm">`).join("")}${sg?"<col>":""}`;
+    const sgTh = sg ? `<th>${esc(signLab(c))}</th>` : "", sgTd = sg ? "<td></td>" : "";
+    const head = `<tr><th></th>${cols.map(x=>`<th>${esc(x.label)}</th>`).join("")}${sgTh}</tr>`;
     const cls = k => k==="division" ? "d" : k==="name" ? "nm" : "x";
     const cell = (r, i) => r
-      ? `<tr style="height:${rowH}mm"><td class="n">${i}</td>${cols.map(x=>`<td class="${cls(x.k)}">${esc(cellText(r,x.k))}</td>`).join("")}<td></td></tr>`
-      : `<tr style="height:${rowH}mm"><td class="n"></td>${cols.map(()=>"<td></td>").join("")}<td></td></tr>`;
+      ? `<tr style="height:${rowH}mm"><td class="n">${i}</td>${cols.map(x=>`<td class="${cls(x.k)}">${esc(cellText(r,x.k))}</td>`).join("")}${sgTd}</tr>`
+      : `<tr style="height:${rowH}mm"><td class="n"></td>${cols.map(()=>"<td></td>").join("")}${sgTd}</tr>`;
     let html = "", k = 0;
     for(let p=0; p<pages; p++){
       const chunk = rows.slice(p*perPage, (p+1)*perPage);
@@ -148,7 +152,7 @@
       <div class="tw"><table><thead><tr><th>欄位名稱（可改）</th><th>簽到表</th><th>網站顯示</th><th>順序</th></tr></thead><tbody>
         <tr><td><span class="fixed">#　序號（固定第一欄）</span></td><td class="c">✓</td><td class="c">—</td><td></td></tr>
         ${rows}
-        <tr><td><input type="text" data-col="signlabel" value="${esc(signLab(c))}" maxlength="12" aria-label="最後一欄名稱"> <span class="fixed">固定最後一欄</span></td><td class="c">✓</td><td class="c">—</td><td></td></tr>
+        <tr><td><input type="text" data-col="signlabel" value="${esc(signLab(c))}" maxlength="12" aria-label="最後一欄名稱"> <span class="fixed">固定最後一欄</span></td><td class="c"><input type="checkbox" data-col="signon"${signOn(c)?" checked":""} aria-label="印出簽到欄"></td><td class="c">—</td><td></td></tr>
       </tbody></table></div>
       <div class="row-add">新增空白欄（給現場手寫）：<input type="text" id="ss-new" maxlength="20" placeholder="例如：簽到時間"><button type="button" class="btn" data-col="add">新增</button>
         <span style="flex:1"></span><button type="button" class="btn primary" data-col="save"${SS.dirty?"":" disabled"}>儲存設定</button>${SS.dirty?'<span class="fixed">尚未儲存</span>':""}</div>
@@ -163,7 +167,7 @@
     const hasUnit = !!(c.listOnly && c.listUnit);
     const y = box.scrollTop;
     box.innerHTML = `<div class="ss-bar">
-        <b>${isAward(c)?"領獎簽收表":"簽到表"}預覽 · ${n} 人 · ${pages} 頁${single?" · 單欄":""}</b>
+        <b>${!signOn(c)?"名單":isAward(c)?"領獎簽收表":"簽到表"}預覽 · ${n} 人 · ${pages} 頁${single?" · 單欄":""}</b>
         <label>排序 <select data-ss="sort"><option value="list"${SS.sort==="list"?" selected":""}>依名單順序</option><option value="div"${SS.sort==="div"?" selected":""}>依事業部</option></select></label>
         <label><input type="checkbox" data-ss="blanks"${SS.blanks?" checked":""}> 補空白列（現場加簽）</label>
         ${isAward(c) && officialFor(c.id).some(p=>!String(p.award||"").trim())?`<label><input type="checkbox" data-ss="wonOnly"${SS.wonOnly?" checked":""}> 只列有領獎的人</label>`:""}
@@ -181,8 +185,8 @@
     const c = S.courses.find(x=>x.id===SS.id); if(!c) return;
     const cols = SS.cols.map(x=>({k:x.k, label:x.label, sign:!!x.sign, pub:!!x.pub}));
     try{
-      await api("admin/course",{course:{...c, cols, ...(SS.signLabel!=null?{signLabel:SS.signLabel}:{})}});
-      SS.signLabel = null;
+      await api("admin/course",{course:{...c, cols, ...(SS.signLabel!=null?{signLabel:SS.signLabel}:{}), ...(SS.signOff!=null?{signOff:SS.signOff}:{})}});
+      SS.signLabel = null; SS.signOff = null;
       SS.dirty = false; toast("欄位設定已儲存");
       await refresh(true);
     }catch(e){ toast(errMsg(e)); }
@@ -192,7 +196,7 @@
   function close(){ box.hidden = true; box.innerHTML = ""; document.body.classList.remove("ss-printing"); document.documentElement.style.overflow = ""; SS.id = null; }
 
   window.openSignSheet = function(id){
-    SS.id = id; SS.unitOnly = true; SS.cols = null; SS.panel = false; SS.dirty = false; SS.signLabel = null;
+    SS.id = id; SS.unitOnly = true; SS.cols = null; SS.panel = false; SS.dirty = false; SS.signLabel = null; SS.signOff = null;
     box.hidden = false; document.documentElement.style.overflow = "hidden"; document.body.classList.add("ss-printing");
     draw(); box.scrollTop = 0;
   };
@@ -206,6 +210,7 @@
   });
   box.addEventListener("change", e=>{
     const t = e.target;
+    if(t.dataset.col==="signon"){ SS.signOff = !t.checked; SS.dirty = true; draw(); return; }
     if(t.dataset.col==="sign" || t.dataset.col==="pub"){ SS.cols[+t.dataset.i][t.dataset.col] = t.checked; SS.dirty = true; draw(); return; }
     const k = t.dataset.ss; if(!k) return;
     if(k==="sort") SS.sort = e.target.value; else SS[k] = e.target.checked;
@@ -228,7 +233,7 @@
     if(b.dataset.ss==="print"){
       const c = S.courses.find(x=>x.id===SS.id);
       const old = document.title;
-      document.title = (c ? c.title.replace(/[\\/:*?"<>|]/g," ").trim() : "課程") + (c&&isAward(c) ? "_領獎簽收表" : "_簽到表");
+      document.title = (c ? c.title.replace(/[\\/:*?"<>|]/g," ").trim() : "課程") + (c&&!signOn(c) ? "_名單" : c&&isAward(c) ? "_領獎簽收表" : "_簽到表");
       const done = ()=>{ document.title = old; window.removeEventListener("afterprint", done); };
       window.addEventListener("afterprint", done);
       setTimeout(()=>window.print(), 50);

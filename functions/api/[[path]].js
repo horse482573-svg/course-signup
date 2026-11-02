@@ -48,7 +48,8 @@ function cleanCourse(c) {
   o.starDays = Number.isFinite(sd) && sd > 0 ? sd : 0;
   o.starLabel = str(c?.starLabel, 20);
   o.asOf = str(c?.asOf, 20);
-  o.signLabel = str(c?.signLabel, 12); // 簽到表最後一欄的名稱（預設：課程「簽到」、獎勵「簽收」）
+  o.signLabel = str(c?.signLabel, 12);
+  o.signOff = c?.signOff === true; // true＝簽到表不印簽到欄（只當名單用） // 簽到表最後一欄的名稱（預設：課程「簽到」、獎勵「簽收」）
   // 欄位設定：k＝欄位代號（division/name/meal/drink/note/award/days/x:表頭/b:空白欄），sign＝印在簽到表，pub＝同事在網站上看得到
   if (Array.isArray(c?.cols)) {
     o.cols = c.cols.slice(0, 24).map(x => ({ k: str(x?.k, 40), label: str(x?.label, 20), sign: x?.sign === true, pub: x?.pub === true })).filter(x => x.k);
