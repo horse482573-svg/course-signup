@@ -9,5 +9,11 @@ CREATE TABLE IF NOT EXISTS visits (
   PRIMARY KEY (day, vid)
 );
 
+CREATE TABLE IF NOT EXISTS budgets (
+  course_id  TEXT PRIMARY KEY,
+  data       TEXT NOT NULL,      -- JSON：報名費身分、繳費勾選、贊助、支出、緩衝
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS images (id TEXT PRIMARY KEY, mime TEXT NOT NULL, body BLOB NOT NULL, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_signups_pkey ON signups(pkey);

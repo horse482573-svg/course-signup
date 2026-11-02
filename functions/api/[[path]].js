@@ -255,6 +255,21 @@ export async function onRequest({ request, env, params }) {
         ).all();
         return J({ ok: true, days: r.results });
       }
+      // ---------- 自辦課程預算（只有舉辦人看得到）----------
+      case "admin/budgets": {
+        const r = await db.prepare("SELECT course_id, data FROM budgets").all();
+        const out = {};
+        for (const x of r.results) { try { out[x.course_id] = JSON.parse(x.data); } catch (e) {} }
+        return J({ ok: true, budgets: out });
+      }
+      case "admin/budget": {
+        const id = str(body.courseId, 40);
+        const text = JSON.stringify(body.budget ?? null);
+        if (!id || !body.budget || typeof body.budget !== "object") return J({ ok: false, error: "bad_input" }, 400);
+        if (text.length > 60000) return J({ ok: false, error: "too_large" }, 413);
+        await db.prepare("INSERT OR REPLACE INTO budgets (course_id, data, updated_at) VALUES (?, ?, ?)").bind(id, text, now()).run();
+        return J({ ok: true });
+      }
       case "admin/check":
         return J({ ok: true });
       case "admin/course": {
@@ -277,6 +292,7 @@ export async function onRequest({ request, env, params }) {
           db.prepare("DELETE FROM courses WHERE id = ?").bind(id),
           db.prepare("DELETE FROM signups WHERE course_id = ?").bind(id),
           db.prepare("DELETE FROM rosters WHERE course_id = ?").bind(id),
+          db.prepare("DELETE FROM budgets WHERE course_id = ?").bind(id),
         ];
         for (const img of [c?.poster, c?.payQr]) if (img) stmts.push(db.prepare("DELETE FROM images WHERE id = ?").bind(img));
         await db.batch(stmts);

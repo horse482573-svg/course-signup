@@ -830,6 +830,8 @@ async function saveCourse(){
     listOnly:!!$("#f-listonly")?.checked, listUnit:($("#f-listunit")?.value||"").trim(), mealLabel:($("#f-meal-l")?.value||"").trim(), drinkLabel:($("#f-drink-l")?.value||"").trim() };
   const old = S.editing==="new" ? {} : (S.courses.find(x=>x.id===S.editing)||{});
   if(S.editing!=="new") course.id = S.editing;
+  // 表單沒有的設定（欄位設定、星星、簽到欄…）沿用原本的值，不被洗掉
+  for(const k of ["cols","signLabel","signOff","starDays","starLabel","asOf","listOnly","listUnit","mealLabel","drinkLabel"]) if(old[k]!==undefined && course[k]===undefined) course[k]=old[k];
   const btn=$("#courseForm button[type=submit]"); if(btn) btn.disabled=true;
   try{
     await api("admin/course",{course});
@@ -847,6 +849,8 @@ async function saveAward(v, title){
   const course = { title, kind:"award", date, endDate, summary:v("f-summary"), detail:$("#f-detail").value.trim(), poster:S.draft.poster||"", status:"open" };
   const old = S.editing==="new" ? {} : (S.courses.find(x=>x.id===S.editing)||{});
   if(S.editing!=="new") course.id = S.editing;
+  // 表單沒有的設定（欄位設定、星星、簽到欄…）沿用原本的值，不被洗掉
+  for(const k of ["cols","signLabel","signOff","starDays","starLabel","asOf","listOnly","listUnit","mealLabel","drinkLabel"]) if(old[k]!==undefined && course[k]===undefined) course[k]=old[k];
   const btn=$("#courseForm button[type=submit]"); if(btn) btn.disabled=true;
   try{
     await api("admin/course",{course});
