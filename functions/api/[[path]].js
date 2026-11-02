@@ -293,6 +293,7 @@ export async function onRequest({ request, env, params }) {
           db.prepare("DELETE FROM signups WHERE course_id = ?").bind(id),
           db.prepare("DELETE FROM rosters WHERE course_id = ?").bind(id),
           db.prepare("DELETE FROM budgets WHERE course_id = ?").bind(id),
+          db.prepare("DELETE FROM roster_prev WHERE course_id = ?").bind(id),
         ];
         for (const img of [c?.poster, c?.payQr]) if (img) stmts.push(db.prepare("DELETE FROM images WHERE id = ?").bind(img));
         await db.batch(stmts);
@@ -301,12 +302,39 @@ export async function onRequest({ request, env, params }) {
       case "admin/roster": {
         const id = str(body.courseId, 40);
         const entries = (Array.isArray(body.entries) ? body.entries : []).slice(0, 3000).map(cleanEntry).filter(p => p.name);
-        await db.prepare("INSERT OR REPLACE INTO rosters (course_id, entries, imported_at) VALUES (?, ?, ?)").bind(id, JSON.stringify(entries), now()).run();
+        // 先把目前名單存成「上一版」，匯入錯了可以復原
+        await db.batch([
+          db.prepare("INSERT OR REPLACE INTO roster_prev (course_id, entries, imported_at, saved_at) SELECT course_id, entries, imported_at, ? FROM rosters WHERE course_id = ?").bind(now(), id),
+          db.prepare("INSERT OR REPLACE INTO rosters (course_id, entries, imported_at) VALUES (?, ?, ?)").bind(id, JSON.stringify(entries), now()),
+        ]);
         return J({ ok: true, count: entries.length });
       }
       case "admin/roster/delete": {
-        await db.prepare("DELETE FROM rosters WHERE course_id = ?").bind(str(body.courseId, 40)).run();
+        const id = str(body.courseId, 40);
+        await db.batch([
+          db.prepare("INSERT OR REPLACE INTO roster_prev (course_id, entries, imported_at, saved_at) SELECT course_id, entries, imported_at, ? FROM rosters WHERE course_id = ?").bind(now(), id),
+          db.prepare("DELETE FROM rosters WHERE course_id = ?").bind(id),
+        ]);
         return J({ ok: true });
+      }
+      case "admin/roster/undo": {
+        // 目前名單和上一版互換（所以再按一次可以換回來）
+        const id = str(body.courseId, 40);
+        const prev = await db.prepare("SELECT entries, imported_at FROM roster_prev WHERE course_id = ?").bind(id).first();
+        if (!prev) return J({ ok: false, error: "no_prev" }, 404);
+        const cur = await db.prepare("SELECT entries, imported_at FROM rosters WHERE course_id = ?").bind(id).first();
+        const stmts = [db.prepare("INSERT OR REPLACE INTO rosters (course_id, entries, imported_at) VALUES (?, ?, ?)").bind(id, prev.entries, prev.imported_at)];
+        stmts.push(cur
+          ? db.prepare("INSERT OR REPLACE INTO roster_prev (course_id, entries, imported_at, saved_at) VALUES (?, ?, ?, ?)").bind(id, cur.entries, cur.imported_at, now())
+          : db.prepare("DELETE FROM roster_prev WHERE course_id = ?").bind(id));
+        await db.batch(stmts);
+        return J({ ok: true });
+      }
+      case "admin/roster/prev": {
+        const r = await db.prepare("SELECT course_id, entries, imported_at, saved_at FROM roster_prev").all();
+        const out = {};
+        for (const x of r.results) { let n = 0; try { n = JSON.parse(x.entries).length; } catch (e) {} out[x.course_id] = { n, importedAt: x.imported_at, savedAt: x.saved_at }; }
+        return J({ ok: true, prev: out });
       }
       case "admin/image/delete": {
         const ids = (Array.isArray(body.ids) ? body.ids : []).map(x => str(x, 40)).filter(Boolean).slice(0, 10);

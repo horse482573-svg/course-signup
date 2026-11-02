@@ -15,5 +15,12 @@ CREATE TABLE IF NOT EXISTS budgets (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS roster_prev (
+  course_id   TEXT PRIMARY KEY,
+  entries     TEXT NOT NULL,     -- 上一版名單（匯入前自動保存，可復原）
+  imported_at TEXT,
+  saved_at    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS images (id TEXT PRIMARY KEY, mime TEXT NOT NULL, body BLOB NOT NULL, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_signups_pkey ON signups(pkey);

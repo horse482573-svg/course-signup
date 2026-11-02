@@ -75,10 +75,15 @@ function logVisit(){
   if(!vid){ vid = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)+Date.now()).replace(/-/g,"").slice(0,20); ls.set("cs-vid", vid); }
   api("visit", {vid, named: !!S.me}).catch(()=>{});
 }
+async function loadPrev(){
+  if(!S.isOwner) return;
+  try{ S.prev = (await api("admin/roster/prev",{})).prev || {}; }catch(e){}
+}
 async function loadVisits(){
   if(!S.isOwner) return;
   try{ S.visits = (await api("admin/visits",{})).days; }catch(e){}
   try{ S.budgets = (await api("admin/budgets",{})).budgets || {}; }catch(e){}
+  await loadPrev();
 }
 function visitsBox(){
   const d = S.visits;
@@ -531,6 +536,7 @@ function awardAdminRow(a){
     ${S.importing===a.id?importBox(a):""}
     <div class="actions" style="margin-top:12px">
       ${S.importing!==a.id?`<button class="btn primary" data-act="imp-open" data-id="${esc(a.id)}">${info?"更新達成名單":"匯入達成名單"}</button>`:""}
+      ${(S.prev||{})[a.id]?`<button class="btn" data-act="roster-undo" data-id="${esc(a.id)}" title="匯入前自動保存的名單">↩ 復原上一版（${fmtTime(S.prev[a.id].importedAt)||"—"}，${S.prev[a.id].n} 人）</button>`:""}
       <button class="btn" data-act="edit" data-id="${esc(a.id)}">編輯</button>
       ${list.length?`<button class="btn" data-act="signsheet" data-id="${esc(a.id)}">簽到表</button><button class="btn" data-act="csv" data-id="${esc(a.id)}">下載名單 CSV</button>`:""}
       <button class="btn link" data-act="goto-award" data-id="${esc(a.id)}">查看同事看到的畫面</button>
@@ -598,6 +604,7 @@ function courseAdminRow(c){
       ${S.importing===c.id?importBox(c):""}
       <div class="actions" style="margin-top:12px">
         ${S.importing!==c.id?`<button class="btn primary" data-act="imp-open" data-id="${esc(c.id)}">${info?"重新匯入官方名單":"匯入官方名單"}</button>`:""}
+        ${(S.prev||{})[c.id]?`<button class="btn" data-act="roster-undo" data-id="${esc(c.id)}" title="匯入前自動保存的名單">↩ 復原上一版（${fmtTime(S.prev[c.id].importedAt)||"—"}，${S.prev[c.id].n} 人）</button>`:""}
         <button class="btn" data-act="edit" data-id="${esc(c.id)}">編輯</button>
         <button class="btn" data-act="toggle" data-id="${esc(c.id)}">${c.status==="closed"?"重新開放報名":"截止報名"}</button>
         <button class="btn${S.budgetOpen===c.id?" primary":""}" data-act="budget" data-id="${esc(c.id)}" aria-expanded="${S.budgetOpen===c.id}">💰 預算</button>
@@ -885,6 +892,12 @@ document.addEventListener("click", async ev=>{
   if(act==="goto") gotoCourse(id);
   else if(act==="budget"){ if(S.budgetOpen===id && S.bd && S.bd.dirty && !confirm("預算還沒儲存，確定要收起嗎？")) return; S.budgetOpen = S.budgetOpen===id ? null : id; S.bd = null; render(true); if(S.budgetOpen) setTimeout(()=>$("#bgbox")?.scrollIntoView({behavior:"smooth",block:"start"}),0); }
   else if(act==="signsheet") openSignSheet(id);
+  else if(act==="roster-undo"){
+    const pv=(S.prev||{})[id]; if(!pv) return;
+    if(!confirm(`把名單換回上一版（${fmtTime(pv.importedAt)||"—"} 的 ${pv.n} 人）？\n目前的名單會變成「上一版」，需要的話可以再按一次換回來。`)) return;
+    try{ await api("admin/roster/undo",{courseId:id}); toast("已復原上一版名單"); }catch(e){ toast(errMsg(e)); }
+    await loadPrev(); await refresh();
+  }
   else if(act==="skip"){ toggleSkip(id); render(); toast(S.skip.has(id)?"已設為不再提醒，課程移到後面":"已恢復提醒"); }
   else if(act==="join"){ S.pendingJoin=id; if(!S.me) closeProfile(); render(); }
   else if(act==="join-yes") join(id);
@@ -914,7 +927,7 @@ document.addEventListener("click", async ev=>{
   else if(act==="toggle"){ const c=S.courses.find(x=>x.id===id); if(c){ try{ await api("admin/course",{course:{...c, status:c.status==="closed"?"open":"closed"}}); toast(c.status==="closed"?"已重新開放報名":"已截止報名"); }catch(e){ toast(errMsg(e)); } await refresh(); } }
   else if(act==="csv") csv([S.courses.find(x=>x.id===id)]);
   else if(act==="csv-all") csv(sortedCourses());
-  else if(act==="imp-open"){ closeImport(); S.importing=id; render(); setTimeout(()=>{ $("#importBox")?.scrollIntoView({behavior:"smooth",block:"center"}); $("#imp-text")?.focus(); },0); }
+  else if(act==="imp-open"){ closeImport(); S.importing=id; S.impMode = rosterInfo(id) ? "merge" : "replace"; render(); setTimeout(()=>{ $("#importBox")?.scrollIntoView({behavior:"smooth",block:"center"}); $("#imp-text")?.focus(); },0); }
   else if(act==="imp-close"){ closeImport(); render(); }
   else if(act==="imp-run"){
     S.impText = $("#imp-text")?.value || "";
@@ -965,9 +978,9 @@ document.addEventListener("click", async ev=>{
       const hit = rosterFor(id).filter(p=>entries.some(o=>sameP(p,o))).length;
       toast(`已匯入 ${entries.length} 人，與自行回報相符 ${hit} 人`); closeImport();
     }catch(e){ toast(errMsg(e)); }
-    S.impBusy=false; await refresh();
+    S.impBusy=false; await loadPrev(); await refresh();
   }
-  else if(act==="imp-clear"){ try{ await api("admin/roster/delete",{courseId:id}); toast("已清除官方名單"); closeImport(); }catch(e){ toast(errMsg(e)); } await refresh(); }
+  else if(act==="imp-clear"){ try{ await api("admin/roster/delete",{courseId:id}); toast("已清除官方名單"); closeImport(); }catch(e){ toast(errMsg(e)); } await loadPrev(); await refresh(); }
 });
 document.addEventListener("change", ev=>{
   const inp = ev.target.closest("input[type=file][data-kind]");
