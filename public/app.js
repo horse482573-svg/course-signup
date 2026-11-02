@@ -135,7 +135,8 @@ function sameP(a,b){
   const da=normUnit(a.division), db=normUnit(b.division);
   return !da || !db || da===db || da.includes(db) || db.includes(da);
 }
-const entryOf = o => ({...profileOf(o), meal:o?.meal||"", drink:o?.drink||"", award:o?.award||"", mk:o?.mk, me:o?.me});
+const entryOf = o => ({...profileOf(o), meal:o?.meal||"", drink:o?.drink||"", award:o?.award||"", mk:o?.mk, me:o?.me,
+  ...(Number.isFinite(o?.days)?{days:o.days}:{}), ...(o?.extra&&typeof o.extra==="object"?{extra:{...o.extra}}:{})});
 const isMeal = c => c && c.kind==="meal";
 /* 餐點欄位名稱：跟著匯入名單的表頭（早餐／午餐／下午茶…），沒設定時用預設 */
 const mealL = c => (c && c.mealLabel) || "早餐";
@@ -150,11 +151,50 @@ function peopleFor(c){
   const out = rosterFor(c.id).map(p=>{
     const i = off.findIndex(o=>!o.used && sameP(p,o));
     if(i>=0) off[i].used = true;
-    const m = i>=0 ? {meal:off[i].meal, drink:off[i].drink, note:off[i].title} : {meal:"", drink:"", note:""};
+    const m = i>=0 ? {meal:off[i].meal, drink:off[i].drink, note:off[i].title, extra:off[i].extra} : {meal:"", drink:"", note:""};
     if(!ext) return {...p, ...m, confirmed:true, src:"page"};
     return {...p, ...m, confirmed:i>=0, src:i>=0?"both":"self"};
   });
   for(const o of off) if(!o.used) out.push({...entryOf(o), note:o.title, pkey:null, at:"", confirmed:true, src:ext?"official":"list"});
+  return out;
+}
+/* ---------- 欄位設定（簽到表／網站顯示）----------
+   k：division 事業部、name 姓名、meal/drink 餐點、note 備註、award 獎勵、days 出席天數、x:表頭 名單其他欄位、b:名稱 空白欄 */
+function colRows(c){ return isAward(c) ? officialFor(c.id).map(o=>({...entryOf(o), note:o.title})) : peopleFor(c); }
+function colVal(p, k){
+  if(k.startsWith("x:")) return (p.extra && p.extra[k.slice(2)]) || "";
+  if(k.startsWith("b:")) return "";
+  if(k==="days") return Number.isFinite(p.days) ? p.days+" 天" : "";
+  return p[k] || "";
+}
+function availCols(c, rows){
+  rows = rows || colRows(c);
+  const has = k => rows.some(p=>String(colVal(p,k)).trim());
+  const out = [{k:"division",label:"事業部"},{k:"name",label:"姓名"}];
+  if(has("meal")) out.push({k:"meal",label:mealL(c)});
+  if(has("drink")) out.push({k:"drink",label:drinkL(c)});
+  if(has("note")) out.push({k:"note",label:"備註"});
+  if(has("award")) out.push({k:"award",label:"獎勵"});
+  if(has("days")) out.push({k:"days",label:"出席天數"});
+  const xs=[]; for(const p of rows) for(const key of Object.keys(p.extra||{})) if(!xs.includes(key)) xs.push(key);
+  for(const key of xs) out.push({k:"x:"+key,label:key});
+  return out;
+}
+function colsOf(c, rows){
+  const av = availCols(c, rows);
+  if(!Array.isArray(c.cols) || !c.cols.length){
+    const firstData = av.find(x=>x.k!=="division"&&x.k!=="name");
+    return av.map(x=>({...x, sign: x.k==="division"||x.k==="name"||(firstData&&x.k===firstData.k),
+      pub: ["division","name","meal","drink","note"].includes(x.k) || (isAward(c) && (x.k==="award"||x.k==="days"))}));
+  }
+  const out = [];
+  for(const s of c.cols){
+    if(s.k.startsWith("b:")){ out.push({k:s.k,label:s.label||s.k.slice(2),sign:s.sign,pub:false,blank:true}); continue; }
+    const a = av.find(x=>x.k===s.k); if(!a) continue;
+    out.push({k:s.k,label:s.label||a.label,sign:s.sign,pub:s.pub});
+  }
+  for(const a of av) if(!out.some(x=>x.k===a.k)) out.push({...a, sign:false, pub:false});
+  if(!out.some(x=>x.k==="name")) out.unshift({k:"name",label:"姓名",sign:true,pub:true});
   return out;
 }
 const SRC_LABEL = {page:"本頁報名", both:"已確認", self:"待確認", official:"官方名單（未回報）", list:"官方名單"};
@@ -323,7 +363,8 @@ function courseCard(c){
       <div class="roster">
         ${(()=>{ const lu=c.listOnly&&c.listUnit; S._shown = lu ? people.filter(r=>normUnit(r.unit)===normUnit(lu) || isMeP(r)) : people; return ""; })()}
         <h4>報名名單${c.listOnly&&c.listUnit?`（${esc(c.listUnit)}業務中心 ${people.filter(r=>normUnit(r.unit)===normUnit(c.listUnit)).length} 人，全部共 ${n} 人）`:""}${rosterInfo(c.id)?` · 已於 ${fmtTime(rosterInfo(c.id).importedAt)} 核對官方名單`:""}</h4>
-        ${S._shown.length?`<div class="plist">${S._shown.map(r=>`<span class="pcell${isMeP(r)?" me":""}${r.confirmed?"":" pend"}"><span class="pdiv" title="${esc(r.division||"")}">${esc(r.division||"—")}</span><span class="pname">${esc(shownName(r))}</span>${r.confirmed?"":`<small>待確認</small>`}${(()=>{ const t=[r.note,r.meal,r.drink].filter(Boolean).join(" · "); return t?`<span class="pnote">${esc(t)}</span>`:""; })()}</span>`).join("")}</div>`
+        ${S._shown.length?`<div class="plist">${(()=>{ const cc=colsOf(c, people), showDiv=cc.some(x=>x.k==="division"&&x.pub), more=cc.filter(x=>x.pub&&x.k!=="division"&&x.k!=="name"&&!x.blank);
+          return S._shown.map(r=>`<span class="pcell${isMeP(r)?" me":""}${r.confirmed?"":" pend"}${showDiv?"":" nodiv"}">${showDiv?`<span class="pdiv" title="${esc(r.division||"")}">${esc(r.division||"—")}</span>`:""}<span class="pname">${esc(shownName(r))}</span>${r.confirmed?"":`<small>待確認</small>`}${(()=>{ const t=more.map(x=>colVal(r,x.k)).filter(Boolean).join(" · "); return t?`<span class="pnote">${esc(t)}</span>`:""; })()}</span>`).join(""); })()}</div>`
            :`<span class="who">${n?`目前${esc(c.listOnly&&c.listUnit||"")}業務中心還沒有人報名。`:"還沒有人報名，成為第一位吧。"}</span>`}
       </div>
     </div>
@@ -535,8 +576,8 @@ function courseAdminRow(c){
       ${ext?`<div class="ext" style="margin-bottom:4px">外部報名：<a href="${esc(c.signupUrl)}" target="_blank" rel="noopener noreferrer">${esc(c.signupUrl)}</a></div>
         <div class="hint" style="margin-bottom:12px">${info?`官方名單 ${officialFor(c.id).length} 人，${fmtTime(info.importedAt)} 匯入`:"尚未匯入官方名單"}${nPend?` · <b style="color:var(--warn)">${nPend} 人自行回報、尚未在官方名單中找到</b>`:""}</div>`
         :`<div class="hint" style="margin-bottom:12px">本站報名暫停中 · ${info?`官方名單 ${officialFor(c.id).length} 人，${fmtTime(info.importedAt)} 匯入`:"尚未匯入官方名單"}</div>`}
-      ${r.length?`<div class="tbl"><table><thead><tr><th>#</th><th>業務單位</th><th>事業部</th><th>姓名</th><th>職稱</th>${isMeal(c)?`<th>${esc(mealL(c))}</th><th>${esc(drinkL(c))}</th>`:""}<th>狀態</th><th>回報時間</th></tr></thead><tbody>
-        ${r.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.unit||"—")}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.title||"—")}</td>${isMeal(c)?`<td>${esc(p.meal||"—")}</td><td>${esc(p.drink||"—")}</td>`:""}<td><span class="pill ${p.src==="self"?"pending":"mine"}">${SRC_LABEL[p.src]}</span></td><td class="t">${fmtTime(p.at)||"—"}</td></tr>`).join("")}
+      ${r.length?`<div class="tbl"><table><thead><tr><th>#</th><th>業務單位</th><th>事業部</th><th>姓名</th><th>職稱／備註</th>${isMeal(c)?`<th>${esc(mealL(c))}</th><th>${esc(drinkL(c))}</th>`:""}${xKeys(r).map(k=>`<th>${esc(k)}</th>`).join("")}<th>狀態</th><th>回報時間</th></tr></thead><tbody>
+        ${r.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.unit||"—")}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.note||p.title||"—")}</td>${isMeal(c)?`<td>${esc(p.meal||"—")}</td><td>${esc(p.drink||"—")}</td>`:""}${xKeys(r).map(k=>`<td>${esc((p.extra||{})[k]||"—")}</td>`).join("")}<td><span class="pill ${p.src==="self"?"pending":"mine"}">${SRC_LABEL[p.src]}</span></td><td class="t">${fmtTime(p.at)||"—"}</td></tr>`).join("")}
       </tbody></table></div>`:`<p class="who" style="margin:0">尚無人報名</p>`}
       ${isMeal(c)?tallyHTML(officialFor(c.id), {meal:mealL(c), drink:drinkL(c)}):""}
       ${S.importing===c.id?importBox(c):""}
@@ -643,8 +684,8 @@ function importBox(c){
       ${rows.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.award||"—")}</td><td><button type="button" class="x" data-act="imp-del" data-i="${i}" aria-label="刪除這一列">×</button></td></tr>`).join("")}
       </tbody></table></div>`:""}`;
     else preview = `<div><b>辨識結果：${rows.length} 人</b>　<span class="who">與自行回報相符 ${hit} 人 · 自行回報但不在這份名單 ${self.length-hit} 人</span></div>
-      ${rows.length?`<div class="tbl"><table><thead><tr><th>#</th><th>業務單位</th><th>事業部</th><th>姓名</th><th>職稱</th>${isMeal(c)?(l=>`<th>${esc(l.meal)}</th><th>${esc(l.drink)}</th>`)(impLabels(c)):""}<th></th></tr></thead><tbody>
-      ${rows.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.unit||"—")}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.title||"—")}</td>${isMeal(c)?`<td>${esc(p.meal||"—")}</td><td>${esc(p.drink||"—")}</td>`:""}<td><button type="button" class="x" data-act="imp-del" data-i="${i}" aria-label="刪除這一列">×</button></td></tr>`).join("")}
+      ${rows.length?`<div class="tbl"><table><thead><tr><th>#</th><th>業務單位</th><th>事業部</th><th>姓名</th><th>職稱／備註</th>${isMeal(c)?(l=>`<th>${esc(l.meal)}</th><th>${esc(l.drink)}</th>`)(impLabels(c)):""}${xKeys(rows).map(k=>`<th>${esc(k)}</th>`).join("")}<th></th></tr></thead><tbody>
+      ${rows.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.unit||"—")}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.title||"—")}</td>${isMeal(c)?`<td>${esc(p.meal||"—")}</td><td>${esc(p.drink||"—")}</td>`:""}${xKeys(rows).map(k=>`<td>${esc((p.extra||{})[k]||"—")}</td>`).join("")}<td><button type="button" class="x" data-act="imp-del" data-i="${i}" aria-label="刪除這一列">×</button></td></tr>`).join("")}
       </tbody></table></div>`:""}
       ${isMeal(c)?tallyHTML(rows, impLabels(c)):""}`;
     preview += `
@@ -662,11 +703,13 @@ function importBox(c){
     ${preview}
   </div>`;
 }
+const xKeys = list => { const ks=[]; for(const p of list) for(const k of Object.keys(p.extra||{})) if(!ks.includes(k)) ks.push(k); return ks; };
 function cleanRows(arr){
   const out=[]; let anon=0;
   for(const r of (Array.isArray(arr)?arr:[])){
     const p = entryOf({unit:String(r?.unit??"").trim().slice(0,20), division:String(r?.division??"").trim().slice(0,30), name:String(r?.name??"").trim().slice(0,30), title:String(r?.title??"").trim().slice(0,20),
-      meal:String(r?.meal??"").trim().slice(0,60), drink:String(r?.drink??"").trim().slice(0,40), award:String(r?.award??"").trim().slice(0,80)});
+      meal:String(r?.meal??"").trim().slice(0,60), drink:String(r?.drink??"").trim().slice(0,40), award:String(r?.award??"").trim().slice(0,80),
+      days:r?.days, extra:r?.extra});
     if(!p.name && (p.meal||p.drink)){ anon++; p.name="未具名"+anon; }
     if(p.name && !out.some(o=>sameP(o,p) && normUnit(o.division)===normUnit(p.division))) out.push(p);
   }
@@ -683,7 +726,8 @@ function splitLine(l){
 function localParse(text){
   const lines = text.replace(/^﻿/,"").split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   if(!lines.length) return null;
-  const head = splitLine(lines[0]);
+  // 表頭去掉 Google 表單題號，例如「3.午餐」→「午餐」
+  const head = splitLine(lines[0]).map(h=>h.replace(/^\s*\d+\s*[.、．:：)）]\s*/,"").trim());
   const col = re => head.findIndex(h=>re.test(h));
   // 有兩欄「姓名」時（遮名＋完整姓名），取最右邊那欄
   const lastCol = re => { let r=-1; head.forEach((h,i)=>{ if(re.test(h)) r=i; }); return r; };
@@ -700,7 +744,12 @@ function localParse(text){
   const statusCol = ix.title<0;
   if(statusCol) ix.title = col(/報名狀態|狀態|備註|組別|梯次/);
   if(ix.name>=0){
-    return lines.slice(1).map(l=>{ const f=splitLine(l); const g=k=>ix[k]>=0?(f[ix[k]]||""):""; return {unit:g("unit"),division:g("division"),name:g("name"),title:(t=>statusCol&&/^(已)?完成$/.test(t)?"":t)(g("title")),meal:g("meal"),drink:g("drink"),award:g("award")}; });
+    // 其他欄位全部保留（排除序號、時間戳記、Email、重複的姓名欄）
+    const used = new Set(Object.values(ix).filter(i=>i>=0));
+    const xi = head.map((h,i)=>i).filter(i=>!used.has(i) && head[i] && !/姓名|名字|^name$/i.test(head[i]) && !/^(序號|#|no\.?|編號|時間戳記|timestamp|電子郵件|e-?mail)$/i.test(head[i]));
+    return lines.slice(1).map(l=>{ const f=splitLine(l); const g=k=>ix[k]>=0?(f[ix[k]]||""):"";
+      const extra={}; for(const i of xi){ const v=(f[i]||"").trim(); if(v) extra[head[i].slice(0,20)]=v.slice(0,80); }
+      return {unit:g("unit"),division:g("division"),name:g("name"),title:(t=>statusCol&&/^(已)?完成$/.test(t)?"":t)(g("title")),meal:g("meal"),drink:g("drink"),award:g("award"),extra}; });
   }
   // 沒有表頭：4 欄當作 業務單位/事業部/姓名/職稱，1 欄當作姓名
   const rows = lines.map(l=>l.includes("\t")||l.includes(",") ? splitLine(l) : l.split(/\s+/));

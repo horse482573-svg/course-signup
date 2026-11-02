@@ -240,6 +240,7 @@ label.check input{width:auto}
 .pcell small{font-size:11.5px;color:var(--muted);justify-self:end;white-space:nowrap}
 .pcell.me{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
 .pcell.pend{border-style:dashed}
+.pcell.nodiv{grid-template-columns:minmax(0,max-content) 1fr}
 .pcell .pnote{grid-column:1/-1;font-size:12.5px;color:var(--accent);line-height:1.4}
 @media (max-width:480px){.plist{grid-template-columns:repeat(2,minmax(0,1fr))}.pcell{grid-template-columns:4.5em minmax(0,max-content) 1fr;gap:6px;padding:6px 8px}}
 .inline-in{display:inline-block;width:5.5em;padding:3px 6px;margin:0 2px;font:inherit}

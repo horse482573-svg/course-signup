@@ -21,6 +21,15 @@ const cleanEntry = p => {
   const o = { ...cleanProfile(p), meal: str(p?.meal, 60), drink: str(p?.drink, 40), award: str(p?.award, 80) };
   const d = parseInt(p?.days, 10);
   if (Number.isFinite(d) && d >= 0 && d < 1000) o.days = d; // 出席天數（全勤王等獎勵用）
+  // 名單上的其他欄位（例如：梯次、衣服尺寸、交通方式），以表頭文字為 key
+  if (p?.extra && typeof p.extra === "object") {
+    const x = {};
+    for (const [k, v] of Object.entries(p.extra).slice(0, 15)) {
+      const kk = str(k, 20), vv = str(v, 80);
+      if (kk && vv) x[kk] = vv;
+    }
+    if (Object.keys(x).length) o.extra = x;
+  }
   return o;
 };
 const profileOk = p => p.unit && p.division && p.name && p.title;
@@ -39,6 +48,10 @@ function cleanCourse(c) {
   o.starDays = Number.isFinite(sd) && sd > 0 ? sd : 0;
   o.starLabel = str(c?.starLabel, 20);
   o.asOf = str(c?.asOf, 20);
+  // 欄位設定：k＝欄位代號（division/name/meal/drink/note/award/days/x:表頭/b:空白欄），sign＝印在簽到表，pub＝同事在網站上看得到
+  if (Array.isArray(c?.cols)) {
+    o.cols = c.cols.slice(0, 24).map(x => ({ k: str(x?.k, 40), label: str(x?.label, 20), sign: x?.sign === true, pub: x?.pub === true })).filter(x => x.k);
+  }
   o.capacity = Math.max(0, Math.min(100000, parseInt(c?.capacity, 10) || 0));
   if (o.status !== "closed") o.status = "open";
   if (o.kind !== "meal" && o.kind !== "award") o.kind = "general";
@@ -129,11 +142,21 @@ export async function onRequest({ request, env, params }) {
           ? { ...s, mk: await mk(s.name), me }
           : { ...s, name: maskName(s.name), pkey: "", mk: await mk(s.name), me });
       }
+      const courses = cs.results.map(r => ({ id: r.id, ...JSON.parse(r.data) }));
+      // 非舉辦人只拿得到勾選「網站顯示」的其他欄位
+      const pubExtra = {};
+      for (const c of courses) pubExtra[c.id] = new Set((c.cols || []).filter(x => x.pub && x.k.startsWith("x:")).map(x => x.k.slice(2)));
       const rosters = {};
       for (const r of rs.results) {
         const entries = [];
-        for (const e of JSON.parse(r.entries)) {
-          const me = isMe(e);
+        for (const e0 of JSON.parse(r.entries)) {
+          const me = isMe(e0);
+          const e = { ...e0 };
+          if (!admin && e.extra) {
+            const keep = pubExtra[r.course_id] || new Set(), x = {};
+            for (const [k, v] of Object.entries(e.extra)) if (keep.has(k)) x[k] = v;
+            if (Object.keys(x).length) e.extra = x; else delete e.extra;
+          }
           entries.push({ ...e, name: admin || me ? e.name : maskName(e.name), mk: await mk(e.name), me });
         }
         rosters[r.course_id] = { entries, importedAt: r.imported_at };
@@ -141,7 +164,7 @@ export async function onRequest({ request, env, params }) {
       return J({
         ok: true,
         admin,
-        courses: cs.results.map(r => ({ id: r.id, ...JSON.parse(r.data) })),
+        courses,
         signups,
         rosters,
       });
