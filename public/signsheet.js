@@ -69,6 +69,7 @@
     if(SS.sort==="div") list = [...list].sort((a,b)=>String(a.division||"").localeCompare(String(b.division||""),"zh-Hant")||String(a.name||"").localeCompare(String(b.name||""),"zh-Hant"));
     return list;
   }
+  const signLab = c => (SS.signLabel ?? c.signLabel) || (isAward(c) ? "簽收" : "簽到");
   const cellText = (p, k) => k==="award" ? shortAward(p.award) : String(colVal(p, k)||"");
   // 依內容長度估欄寬（mm）
   function widthOf(col, rows){
@@ -99,7 +100,7 @@
     const dShort = (!isAward(c) && c.date) ? (d=>`${d.getMonth()+1}/${d.getDate()}(${WD[d.getDay()]})`)(new Date(c.date+"T00:00:00")) : "";
     const sub = [isAward(c) ? "" : c.time, isAward(c) ? "" : c.location].filter(Boolean).join("　");
     const colgroup = `<col style="width:8mm">${widths.map(w=>`<col style="width:${(w*scale).toFixed(1)}mm">`).join("")}<col>`;
-    const head = `<tr><th></th>${cols.map(x=>`<th>${esc(x.label)}</th>`).join("")}<th>${isAward(c)?"簽收":"簽到"}</th></tr>`;
+    const head = `<tr><th></th>${cols.map(x=>`<th>${esc(x.label)}</th>`).join("")}<th>${esc(signLab(c))}</th></tr>`;
     const cls = k => k==="division" ? "d" : k==="name" ? "nm" : "x";
     const cell = (r, i) => r
       ? `<tr style="height:${rowH}mm"><td class="n">${i}</td>${cols.map(x=>`<td class="${cls(x.k)}">${esc(cellText(r,x.k))}</td>`).join("")}<td></td></tr>`
@@ -147,7 +148,7 @@
       <div class="tw"><table><thead><tr><th>欄位名稱（可改）</th><th>簽到表</th><th>網站顯示</th><th>順序</th></tr></thead><tbody>
         <tr><td><span class="fixed">#　序號（固定第一欄）</span></td><td class="c">✓</td><td class="c">—</td><td></td></tr>
         ${rows}
-        <tr><td><span class="fixed">簽到／簽收（固定最後一欄）</span></td><td class="c">✓</td><td class="c">—</td><td></td></tr>
+        <tr><td><input type="text" data-col="signlabel" value="${esc(signLab(c))}" maxlength="12" aria-label="最後一欄名稱"> <span class="fixed">固定最後一欄</span></td><td class="c">✓</td><td class="c">—</td><td></td></tr>
       </tbody></table></div>
       <div class="row-add">新增空白欄（給現場手寫）：<input type="text" id="ss-new" maxlength="20" placeholder="例如：簽到時間"><button type="button" class="btn" data-col="add">新增</button>
         <span style="flex:1"></span><button type="button" class="btn primary" data-col="save"${SS.dirty?"":" disabled"}>儲存設定</button>${SS.dirty?'<span class="fixed">尚未儲存</span>':""}</div>
@@ -180,7 +181,8 @@
     const c = S.courses.find(x=>x.id===SS.id); if(!c) return;
     const cols = SS.cols.map(x=>({k:x.k, label:x.label, sign:!!x.sign, pub:!!x.pub}));
     try{
-      await api("admin/course",{course:{...c, cols}});
+      await api("admin/course",{course:{...c, cols, ...(SS.signLabel!=null?{signLabel:SS.signLabel}:{})}});
+      SS.signLabel = null;
       SS.dirty = false; toast("欄位設定已儲存");
       await refresh(true);
     }catch(e){ toast(errMsg(e)); }
@@ -190,15 +192,17 @@
   function close(){ box.hidden = true; box.innerHTML = ""; document.body.classList.remove("ss-printing"); document.documentElement.style.overflow = ""; SS.id = null; }
 
   window.openSignSheet = function(id){
-    SS.id = id; SS.unitOnly = true; SS.cols = null; SS.panel = false; SS.dirty = false;
+    SS.id = id; SS.unitOnly = true; SS.cols = null; SS.panel = false; SS.dirty = false; SS.signLabel = null;
     box.hidden = false; document.documentElement.style.overflow = "hidden"; document.body.classList.add("ss-printing");
     draw(); box.scrollTop = 0;
   };
 
   box.addEventListener("input", e=>{
-    const t = e.target; if(t.dataset.col!=="label") return;
-    SS.cols[+t.dataset.i].label = t.value.trim() || SS.cols[+t.dataset.i].label; SS.dirty = true;
-    clearTimeout(SS.tm); SS.tm = setTimeout(()=>{ const f=document.activeElement, i=f&&f.dataset&&f.dataset.i, pos=f&&f.selectionStart; draw(); if(i!=null){ const n=box.querySelector(`[data-col=label][data-i="${i}"]`); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(_){} } } }, 500);
+    const t = e.target;
+    if(t.dataset.col==="signlabel"){ SS.signLabel = t.value.trim(); SS.dirty = true; }
+    else if(t.dataset.col==="label"){ SS.cols[+t.dataset.i].label = t.value.trim() || SS.cols[+t.dataset.i].label; SS.dirty = true; }
+    else return;
+    clearTimeout(SS.tm); SS.tm = setTimeout(()=>{ const f=document.activeElement, i=f&&f.dataset&&f.dataset.i, pos=f&&f.selectionStart; const col=f&&f.dataset&&f.dataset.col; draw(); if(col){ const n=col==="label"?box.querySelector(`[data-col=label][data-i="${i}"]`):box.querySelector(`[data-col=signlabel]`); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(_){} } } }, 500);
   });
   box.addEventListener("change", e=>{
     const t = e.target;
