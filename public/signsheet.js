@@ -16,12 +16,10 @@
 .ss-hint{flex-basis:100%;font-size:12.5px;color:var(--muted,#666)}
 .ss-pages{padding:18px 0 40px;display:flex;flex-direction:column;align-items:center;gap:18px}
 .ss-page{width:190mm;height:277mm;background:#fff;color:#000;box-shadow:0 2px 10px rgba(0,0,0,.18);display:flex;flex-direction:column;padding:0;box-sizing:border-box;padding:0 .6mm;overflow:hidden;font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}
-.ss-head{padding:2mm 1mm 3mm;border-bottom:.6mm solid #000;margin-bottom:3mm;display:flex;align-items:flex-end;gap:4mm}
-.ss-head .t{flex:1;min-width:0}
-.ss-head h1{font-size:19pt;line-height:1.25;margin:0;font-weight:700;color:#000}
-.ss-head .sub{font-size:10pt;margin-top:1.2mm;color:#222}
-.ss-head .kind{flex:none;font-size:13pt;font-weight:700;border:.4mm solid #000;padding:1mm 3mm;border-radius:1.5mm}
-.ss-cols{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:4mm;min-height:0}
+.ss-head{border:.35mm solid #222;border-bottom:0;padding:3.2mm 3mm 2.6mm;text-align:center}
+.ss-head h1{font-size:16pt;line-height:1.3;margin:0;font-weight:700;color:#000;letter-spacing:.02em}
+.ss-head .sub{font-size:9.5pt;margin-top:.8mm;color:#555}
+.ss-cols{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:0;min-height:0;align-content:start}
 .ss-cols.one{grid-template-columns:1fr}
 .ss-set{flex-basis:100%;border:1px solid var(--line,#d6dae0);border-radius:10px;padding:10px 12px;background:var(--bg,#f6f7f9)}
 .ss-set h4{margin:0 0 6px;font-size:14px}
@@ -36,13 +34,15 @@
 .ss-set .fixed{color:var(--muted,#888);font-size:12.5px}
 .ss-set .tw{overflow-x:auto}
 .ss-tbl{width:100%;border-collapse:collapse;table-layout:fixed;align-self:start}
-.ss-tbl th,.ss-tbl td{border:.3mm solid #000;padding:0 1.4mm;vertical-align:middle;overflow:hidden;white-space:normal;color:#000;text-align:left;letter-spacing:0}
-.ss-tbl th{height:8mm;font-size:9.5pt;font-weight:700;background:#f1f1f1;text-align:center;text-transform:none}
-.ss-tbl td{font-size:10.5pt}
-.ss-tbl td.n{text-align:center;font-size:9pt;color:#333}
-.ss-tbl td.d{font-size:9pt;line-height:1.2;word-break:break-all}
-.ss-tbl td.nm{font-weight:700;font-size:11pt;white-space:nowrap!important}
-.ss-tbl td.x{font-size:8.5pt;line-height:1.2;word-break:break-all}
+.ss-cols:not(.one) .ss-tbl+.ss-tbl{border-left:.5mm solid #222}
+.ss-tbl th,.ss-tbl td{border:.25mm solid #222;padding:0 1.2mm;vertical-align:middle;overflow:hidden;white-space:normal;color:#333;text-align:center;letter-spacing:.02em;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.ss-tbl th{height:9mm;font-size:10pt;font-weight:400;background:#5b3f86;color:#fff;text-transform:none}
+.ss-tbl tbody tr:nth-child(even) td{background:#f8f9fa}
+.ss-tbl td{font-size:11pt}
+.ss-tbl td.n,.ss-tbl tbody tr:nth-child(even) td.n{background:#c9daf8;font-size:12.5pt;font-weight:700;color:#222;padding:0}
+.ss-tbl td.d{font-size:11pt;line-height:1.25;word-break:break-all}
+.ss-tbl td.nm{font-size:12pt;font-weight:500;white-space:nowrap!important}
+.ss-tbl td.x{font-size:9pt;line-height:1.25;word-break:break-all}
 .ss-foot{display:flex;justify-content:space-between;font-size:8.5pt;color:#333;padding-top:2mm}
 @page{size:A4 portrait;margin:10mm}
 @media print{
@@ -73,7 +73,7 @@
   // 依內容長度估欄寬（mm）
   function widthOf(col, rows){
     if(col.k==="division") return 18;
-    if(col.k==="name") return 16.5;
+    if(col.k==="name") return 17;
     const longest = Math.max(col.label.length, ...rows.map(p=>cellText(p,col.k).length));
     const base = col.blank ? Math.max(18, col.label.length*4.2) : Math.min(26, Math.max(13, longest*2.9));
     return base;
@@ -82,13 +82,13 @@
   function build(c){
     const rows = rowsFor(c), n = rows.length;
     const cols = (SS.cols || colsOf(c)).filter(x=>x.sign);
-    // 欄寬：序號 6.5mm、簽名至少 24mm；放不下就改單欄
+    // 欄寬：序號 8mm、簽名至少 24mm；放不下就改單欄
     const widths = cols.map(x=>widthOf(x, rows));
-    const need = 6.5 + widths.reduce((a,b)=>a+b,0) + 22;
+    const need = 8 + widths.reduce((a,b)=>a+b,0) + 22;
     const single = need > 93;
     const avail = single ? 189 : 93;
     // 放不下就等比縮；單欄時空間多，資料欄適度放寬（簽名欄至少 50mm）
-    const scale = need > avail ? (avail - 6.5 - 22) / (need - 6.5 - 22) : single ? Math.max(1, Math.min(1.6, (avail - 6.5 - 50) / (need - 6.5 - 22))) : 1;
+    const scale = need > avail ? (avail - 8 - 22) / (need - 8 - 22) : single ? Math.max(1, Math.min(1.6, (avail - 8 - 50) / (need - 8 - 22))) : 1;
     const per = single ? 20 : PER_PAGE;
     const pages = Math.max(1, Math.ceil(n / per));
     const perPage = Math.max(1, Math.ceil(n / pages));
@@ -96,9 +96,10 @@
     // 表格區高度約 240mm（扣掉標題、頁尾、表頭）
     const rowH = Math.max(9, Math.min(20, Math.floor((236 / perCol) * 10) / 10));
     const kind = isAward(c) ? "領獎簽收表" : "簽到表";
-    const sub = [c.date ? fmtDay(c.date) : "", isAward(c) ? "" : c.time, isAward(c) ? "" : c.location].filter(Boolean).join("　");
-    const colgroup = `<col style="width:6.5mm">${widths.map(w=>`<col style="width:${(w*scale).toFixed(1)}mm">`).join("")}<col>`;
-    const head = `<tr><th>#</th>${cols.map(x=>`<th>${esc(x.label)}</th>`).join("")}<th>簽名</th></tr>`;
+    const dShort = (!isAward(c) && c.date) ? (d=>`${d.getMonth()+1}/${d.getDate()}(${WD[d.getDay()]})`)(new Date(c.date+"T00:00:00")) : "";
+    const sub = [isAward(c) ? "" : c.time, isAward(c) ? "" : c.location].filter(Boolean).join("　");
+    const colgroup = `<col style="width:8mm">${widths.map(w=>`<col style="width:${(w*scale).toFixed(1)}mm">`).join("")}<col>`;
+    const head = `<tr><th></th>${cols.map(x=>`<th>${esc(x.label)}</th>`).join("")}<th>${isAward(c)?"簽收":"簽到"}</th></tr>`;
     const cls = k => k==="division" ? "d" : k==="name" ? "nm" : "x";
     const cell = (r, i) => r
       ? `<tr style="height:${rowH}mm"><td class="n">${i}</td>${cols.map(x=>`<td class="${cls(x.k)}">${esc(cellText(r,x.k))}</td>`).join("")}<td></td></tr>`
@@ -118,7 +119,7 @@
       };
       k += chunk.length;
       html += `<section class="ss-page">
-        <div class="ss-head"><div class="t"><h1>${esc(c.title)}</h1>${sub?`<div class="sub">${esc(sub)}</div>`:""}</div><span class="kind">${kind}</span></div>
+        <div class="ss-head"><h1>${esc([dShort, c.title, kind].filter(Boolean).join(" "))}</h1>${sub?`<div class="sub">${esc(sub)}</div>`:""}</div>
         <div class="ss-cols${single?" one":""}">${col(0)}${single?"":(slots>perCol?col(1):"<div></div>")}</div>
         <div class="ss-foot"><span>共 ${n} 人${SS.unitOnly && c.listOnly && c.listUnit ? `（${esc(c.listUnit)}業務中心）` : ""}</span><span>第 ${p+1} / ${pages} 頁</span></div>
       </section>`;
@@ -146,7 +147,7 @@
       <div class="tw"><table><thead><tr><th>欄位名稱（可改）</th><th>簽到表</th><th>網站顯示</th><th>順序</th></tr></thead><tbody>
         <tr><td><span class="fixed">#　序號（固定第一欄）</span></td><td class="c">✓</td><td class="c">—</td><td></td></tr>
         ${rows}
-        <tr><td><span class="fixed">簽名（固定最後一欄）</span></td><td class="c">✓</td><td class="c">—</td><td></td></tr>
+        <tr><td><span class="fixed">簽到／簽收（固定最後一欄）</span></td><td class="c">✓</td><td class="c">—</td><td></td></tr>
       </tbody></table></div>
       <div class="row-add">新增空白欄（給現場手寫）：<input type="text" id="ss-new" maxlength="20" placeholder="例如：簽到時間"><button type="button" class="btn" data-col="add">新增</button>
         <span style="flex:1"></span><button type="button" class="btn primary" data-col="save"${SS.dirty?"":" disabled"}>儲存設定</button>${SS.dirty?'<span class="fixed">尚未儲存</span>':""}</div>
