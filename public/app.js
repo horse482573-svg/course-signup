@@ -703,8 +703,8 @@ function importBox(c){
       ${isMeal(c)?tallyHTML(rows, impLabels(c)):""}`;
     preview += `
       <p class="hint">請檢查結果，有誤的列可以按 × 刪除，或按「重新貼上」修改來源文字。</p>
-      ${rosterInfo(c.id)?`<div class="seg"><label><input type="radio" name="impMode" value="replace" ${S.impMode==="replace"?"checked":""}> 取代目前的${isAward(c)?"達成":"官方"}名單</label><label><input type="radio" name="impMode" value="merge" ${S.impMode==="merge"?"checked":""}> 加入目前的${isAward(c)?"達成":"官方"}名單（合併、去除重複）</label></div>`:""}
-      <div class="actions"><button class="btn primary" data-act="imp-save" data-id="${esc(c.id)}" ${S.impBusy||!rows.length?"disabled":""}>${isAward(c)?"儲存名單":"儲存並核對"}</button><button class="btn link" data-act="imp-reset">重新貼上</button><button class="btn link" data-act="imp-close">取消</button>
+      ${rosterInfo(c.id)?`<div class="seg"><label><input type="radio" name="impMode" value="replace" ${S.impMode==="replace"?"checked":""}> 取代目前的${isAward(c)?"達成":"官方"}名單</label><label><input type="radio" name="impMode" value="merge" ${S.impMode==="merge"?"checked":""}> 加入目前的${isAward(c)?"達成":"官方"}名單（同名的人會更新資料，不重複新增）</label></div>`:""}
+      <div class="actions"><button class="btn primary" data-act="imp-save" data-id="${esc(c.id)}" ${S.impBusy||!rows.length?"disabled":""}>${isAward(c)?"儲存名單":"儲存並核對"}</button><button class="btn link" data-act="imp-reset">重新貼上</button><button class="btn link" data-act="imp-close">取消</button><p class="err" id="imp-warn" role="alert" style="flex-basis:100%;margin:6px 0 0"></p>
       ${rosterInfo(c.id)?`<button class="btn link" data-act="imp-clear" data-id="${esc(c.id)}" style="color:var(--danger)">清除目前的${isAward(c)?"達成":"官方"}名單</button>`:""}</div>`;
   }
   return `<div class="importbox" id="importBox">
@@ -919,6 +919,18 @@ document.addEventListener("click", async ev=>{
   else if(act==="imp-save"){
     const c=S.courses.find(x=>x.id===id); if(!c || S.impBusy) return;
     let entries = S.impRows||[];
+    // 防呆：「取代」會讓原名單上的人消失時，先提醒、再按一次才儲存
+    if(S.impMode!=="merge" && rosterInfo(id)){
+      const gone = officialFor(id).filter(o=>!entries.some(n=>normName(n.name)===normName(o.name)));
+      const sig = gone.map(o=>o.name).join(",");
+      if(gone.length && S.impConfirm!==sig){
+        S.impConfirm = sig;
+        const el=$("#imp-warn")||$("#imp-err"); if(el) el.textContent = `注意：這次是「取代」，原名單上的 ${gone.length} 人會被移除（${gone.slice(0,8).map(o=>o.name).join("、")}${gone.length>8?"…":""}）。只是要補資料的話，請改選上方「加入目前的名單」；確定要取代，請再按一次「儲存並核對」。`;
+        toast(`會移除 ${gone.length} 人，請確認後再按一次`);
+        return;
+      }
+    }
+    S.impConfirm = null;
     if(S.impMode==="merge" && rosterInfo(id)){
       // 補充匯入：同名的人更新原本那一列（補上新欄位），不重複新增
       const base = officialFor(id).map(o=>({...entryOf(o), title:o.title||""}));
