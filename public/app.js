@@ -378,6 +378,18 @@ function mealBox(c, state){
   if(state) return `<div class="mealbox"><span class="mealbox-h">這堂課附餐點</span><span class="who">名單上還沒有你的餐點紀錄，請洽課程舉辦人。</span></div>`;
   return "";
 }
+/* 名單其他欄位的統計（例如交通方式：共同搭車 16、自行前往 4、未填 8）；選項太多的欄位不統計 */
+function extraTally(list){
+  const ks = xKeys(list); let out = "";
+  for(const k of ks){
+    const m = new Map(); let blank = 0;
+    for(const p of list){ const v = String((p.extra||{})[k]||"").trim(); if(v) m.set(v,(m.get(v)||0)+1); else blank++; }
+    if(!m.size || m.size>8) continue;
+    const arr = [...m].sort((a,b)=>b[1]-a[1]); if(blank) arr.push(["（未填）",blank]);
+    out += `<div class="tally"><h4>${esc(k)}</h4>${arr.map(([v,n])=>`<div class="tally-row"><span>${esc(v)}</span><span class="num">${n}</span></div>`).join("")}<div class="tally-row tally-sum"><span>合計</span><span class="num">${list.length}</span></div></div>`;
+  }
+  return out ? `<div class="tallies">${out}</div>` : "";
+}
 function tallyHTML(list, labels){
   labels = labels || {};
   const cnt = k => { const m=new Map(); for(const p of list){ const v=(p[k]||"").trim(); if(v) m.set(v,(m.get(v)||0)+1); } return [...m].sort((a,b)=>b[1]-a[1]); };
@@ -580,6 +592,7 @@ function courseAdminRow(c){
         ${r.map((p,i)=>`<tr><td class="t">${i+1}</td><td>${esc(p.unit||"—")}</td><td>${esc(p.division||"—")}</td><td>${esc(p.name)}</td><td>${esc(p.note||p.title||"—")}</td>${isMeal(c)?`<td>${esc(p.meal||"—")}</td><td>${esc(p.drink||"—")}</td>`:""}${xKeys(r).map(k=>`<td>${esc((p.extra||{})[k]||"—")}</td>`).join("")}<td><span class="pill ${p.src==="self"?"pending":"mine"}">${SRC_LABEL[p.src]}</span></td><td class="t">${fmtTime(p.at)||"—"}</td></tr>`).join("")}
       </tbody></table></div>`:`<p class="who" style="margin:0">尚無人報名</p>`}
       ${isMeal(c)?tallyHTML(officialFor(c.id), {meal:mealL(c), drink:drinkL(c)}):""}
+      ${extraTally(officialFor(c.id))}
       ${S.importing===c.id?importBox(c):""}
       <div class="actions" style="margin-top:12px">
         ${S.importing!==c.id?`<button class="btn primary" data-act="imp-open" data-id="${esc(c.id)}">${info?"重新匯入官方名單":"匯入官方名單"}</button>`:""}
@@ -906,7 +919,20 @@ document.addEventListener("click", async ev=>{
   else if(act==="imp-save"){
     const c=S.courses.find(x=>x.id===id); if(!c || S.impBusy) return;
     let entries = S.impRows||[];
-    if(S.impMode==="merge" && rosterInfo(id)) entries = cleanRows([...officialFor(id), ...entries]);
+    if(S.impMode==="merge" && rosterInfo(id)){
+      // 補充匯入：同名的人更新原本那一列（補上新欄位），不重複新增
+      const base = officialFor(id).map(o=>({...entryOf(o), title:o.title||""}));
+      for(const n of entries){
+        const o = base.find(b=>normName(b.name)===normName(n.name));
+        if(!o){ base.push(n); continue; }
+        for(const f of ["title","meal","drink","award"]) if(n[f]) o[f]=n[f];
+        if(Number.isFinite(n.days)) o.days=n.days;
+        if(n.extra) o.extra = {...(o.extra||{}), ...n.extra};
+        if(!o.division && n.division) o.division = n.division;
+        if(!o.unit && n.unit) o.unit = n.unit;
+      }
+      entries = base.map(({mk,me,...r})=>r);
+    }
     S.impBusy=true; render();
     try{
       await api("admin/roster",{courseId:id, entries});
