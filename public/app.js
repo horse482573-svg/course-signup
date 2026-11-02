@@ -78,6 +78,7 @@ function logVisit(){
 async function loadVisits(){
   if(!S.isOwner) return;
   try{ S.visits = (await api("admin/visits",{})).days; }catch(e){}
+  try{ S.budgets = (await api("admin/budgets",{})).budgets || {}; }catch(e){}
 }
 function visitsBox(){
   const d = S.visits;
@@ -102,6 +103,7 @@ function visitsBox(){
   </section>`;
 }
 async function refresh(soft){
+  const typing = soft && document.activeElement && document.activeElement.closest && document.activeElement.closest("#bgbox, #ss");
   try{
     const q = S.me ? "?"+new URLSearchParams({n:S.me.name||"", d:S.me.division||"", u:S.me.unit||""}) : "";
     const r = await api("state"+q);
@@ -112,7 +114,7 @@ async function refresh(soft){
     $("#sync").textContent = "連線失敗，稍後會自動重試";
     if(!S.loaded){ $("#view").innerHTML = `<div class="empty"><strong>課程暫時無法載入</strong>請確認網路後重新整理頁面。</div>`; return; }
   }
-  render(soft);
+  if(!typing) render(soft);
 }
 
 /* ---------- derived data ---------- */
@@ -598,9 +600,11 @@ function courseAdminRow(c){
         ${S.importing!==c.id?`<button class="btn primary" data-act="imp-open" data-id="${esc(c.id)}">${info?"重新匯入官方名單":"匯入官方名單"}</button>`:""}
         <button class="btn" data-act="edit" data-id="${esc(c.id)}">編輯</button>
         <button class="btn" data-act="toggle" data-id="${esc(c.id)}">${c.status==="closed"?"重新開放報名":"截止報名"}</button>
+        <button class="btn${S.budgetOpen===c.id?" primary":""}" data-act="budget" data-id="${esc(c.id)}" aria-expanded="${S.budgetOpen===c.id}">💰 預算</button>
         ${r.length?`<button class="btn" data-act="signsheet" data-id="${esc(c.id)}">簽到表</button><button class="btn" data-act="csv" data-id="${esc(c.id)}">下載名單 CSV</button>`:""}
         <button class="btn danger" data-act="del" data-id="${esc(c.id)}">刪除</button>
       </div>${del}
+      ${S.budgetOpen===c.id && typeof budgetSection==="function" ? budgetSection(c) : ""}
     </section>`;
 }
 function adminStatus(c){
@@ -630,6 +634,7 @@ function adminTable(){
       <td><span class="pill ${st.cls}">${st.label}</span></td>
       <td class="t">${n} 人</td>
       <td class="t">${info?fmtTime(info.importedAt):"—"}</td>
+      <td class="t">${!isAward(c) && typeof budgetBadge==="function" ? budgetBadge(c) : ""}</td>
       <td><div class="ops"><button type="button" class="btn ${open?"":"primary "}sm" data-act="admin-open" data-id="${esc(c.id)}">${open?"收合":"管理"}</button><button type="button" class="btn sm" data-act="edit" data-id="${esc(c.id)}">編輯</button>${isAward(c)?"":`<button type="button" class="btn sm ${c.hot?"hot-on":""}" data-act="toggle-hot" data-id="${esc(c.id)}" title="${c.hot?"取消近期最火":"設為近期最火"}">${c.hot?"取消最火":"設為最火"}</button>`}</div></td>
     </tr>`;
   }).join("");
@@ -639,7 +644,7 @@ function adminTable(){
         <h2 style="margin:0">課程與獎勵總表</h2>
         <div class="seg seg-tabs">${[["active","進行中／即將開始"],["ended","已結束"],["all","全部"]].map(([k,l])=>`<button type="button" class="btn sm ${f===k?"primary":""}" data-act="admin-filter" data-k="${k}">${l} ${cnt(null,k)}</button>`).join("")}</div>
       </div>
-      ${shown.length?`<div class="tbl"><table class="admin-table"><thead><tr><th>日期</th><th>名稱</th><th>類型</th><th>狀態</th><th>人數</th><th>名單更新</th><th></th></tr></thead><tbody>${rowsHTML}</tbody></table></div>`:`<p class="who" style="margin:0">這個分類目前沒有項目。</p>`}
+      ${shown.length?`<div class="tbl"><table class="admin-table"><thead><tr><th>日期</th><th>名稱</th><th>類型</th><th>狀態</th><th>人數</th><th>名單更新</th><th>預算</th><th></th></tr></thead><tbody>${rowsHTML}</tbody></table></div>`:`<p class="who" style="margin:0">這個分類目前沒有項目。</p>`}
     </section>
     <div id="adminDetail">${open ? (isAward(open) ? awardAdminRow(open) : courseAdminRow(open)) : `<p class="hint" style="text-align:center">點表格中的「管理」或名稱，可以查看名單、匯入名單、下載 CSV、截止或刪除。</p>`}</div>`;
 }
@@ -878,6 +883,7 @@ document.addEventListener("click", async ev=>{
   const b = ev.target.closest("[data-act]"); if(!b) return;
   const id=b.dataset.id, act=b.dataset.act;
   if(act==="goto") gotoCourse(id);
+  else if(act==="budget"){ if(S.budgetOpen===id && S.bd && S.bd.dirty && !confirm("預算還沒儲存，確定要收起嗎？")) return; S.budgetOpen = S.budgetOpen===id ? null : id; S.bd = null; render(true); if(S.budgetOpen) setTimeout(()=>$("#bgbox")?.scrollIntoView({behavior:"smooth",block:"start"}),0); }
   else if(act==="signsheet") openSignSheet(id);
   else if(act==="skip"){ toggleSkip(id); render(); toast(S.skip.has(id)?"已設為不再提醒，課程移到後面":"已恢復提醒"); }
   else if(act==="join"){ S.pendingJoin=id; if(!S.me) closeProfile(); render(); }

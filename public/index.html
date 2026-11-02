@@ -247,6 +247,25 @@ label.check input{width:auto}
 .star-legend{font-size:13px;color:var(--muted);margin:-2px 0 8px}
 td.days{white-space:nowrap;font-variant-numeric:tabular-nums}
 td.aw{white-space:normal;min-width:11em;line-height:1.45}
+.bgbox{margin-top:14px;border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--bg)}
+.bgbox h4{margin:0 0 8px;font-size:16px}
+.bgbox h5{margin:14px 0 6px;font-size:14.5px}
+.bgbox h5 small{font-weight:400;color:var(--muted)}
+.bgbox section{border-top:1px dashed var(--line);margin-top:10px}
+.bgbox input[type=text],.bgbox input[type=number],.bgbox select{font:inherit;font-size:14px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)}
+.bgbox input[type=number]{width:7em}
+.bgbox input[type=text]{width:9em}
+.bg-t td,.bg-t th{padding:5px 8px;vertical-align:middle}
+.bg-t td.c{text-align:center}
+.bg-t .x{border:0;background:none;color:var(--muted);cursor:pointer;font-size:15px}
+.bg-res{border-collapse:collapse;min-width:min(100%,520px);margin:4px 0 8px;font-variant-numeric:tabular-nums}
+.bg-res th,.bg-res td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:right}
+.bg-res td:first-child,.bg-res th:first-child{text-align:left}
+.bg-res small{color:var(--muted);margin-left:4px}
+.bg-res tr.sum td{border-bottom:0;font-size:15.5px}
+.bg-ok{color:#1b7a43}.bg-bad{color:#c0392b}
+@media (prefers-color-scheme:dark){.bg-ok{color:#5fd08a}.bg-bad{color:#ff8a7a}}
+.bg-trial input,.bg-buf input{width:5.5em!important}
 .stamp-skip{background:var(--muted);color:var(--surface)}
 .book.skipped .cover img,.book.skipped .cover .ph{filter:grayscale(.6);opacity:.75}
 .skip-toggle{display:flex;align-items:center;gap:8px;align-self:flex-start;background:none;border:0;padding:2px 0;font:inherit;font-size:13px;color:var(--muted);cursor:pointer}
@@ -305,6 +324,7 @@ footer.foot{margin-top:48px;padding-top:16px;border-top:1px solid var(--line);di
 <div id="lightbox" class="lightbox" hidden data-act="zoom-close"><img id="lightboxImg" alt=""></div>
 <script src="app.js"></script>
 <script src="signsheet.js"></script>
+<script src="budget.js"></script>
 <script>
 (function(){
   var bar=document.getElementById("stickyTop"), root=document.documentElement;
