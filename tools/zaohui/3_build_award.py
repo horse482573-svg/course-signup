@@ -42,6 +42,7 @@ for n in A["names"]:
     head+= [f"星巴克禮券 2 張（{m} 月全勤）" for m in mon]
     award=("＋".join(head)+("："+"＋".join(parts) if parts else "")) if head else ""
     out.append({"unit":"高雄","division":DIV.get(n,""),"name":n,"title":"","meal":"","drink":"","award":award,"days":cnt(n),"_c":coffee})
+out=[p for p in out if p["days"]>0 and p["division"]!="GO總公司"]  # 出席 0 天不列；GO總公司＝行政人員
 out.sort(key=lambda p:(-p["_c"],-p["days"]))
 ref=next(p["days"] for p in out if p["name"]==STAR_REF)
 for p in out: del p["_c"]

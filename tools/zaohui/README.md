@@ -16,3 +16,4 @@
 2. `python3 -I 3_build_award.py att.json division_map.json` → award.json（列出所有人，含 days；沒獎勵的 award 空白；依咖啡券張數排序）
 3. 寫入 D1：rosters(course_id='z0h1q2w3e4r5t6y7') entries=award.json；courses.data 設 starDays＝湛翰揚的出席天數、starLabel＝「訓育主委」、asOf＝資料最後日期
 - 出席天數＝實際「出席」＋公假（放假日不算天數）；星星：天數 ≥ 湛翰揚（含等於）
+- 出席 0 天的人不列出；事業部「GO總公司」＝行政人員，不計入
