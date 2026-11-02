@@ -2,7 +2,7 @@
    版面：A4 直式、雙欄；每頁最多 30 人（每欄 15 列），超過就分頁並平均分配，例如 50 人 → 2 頁各 25 人。 */
 (function(){
   const PER_PAGE = 30;
-  const SS = { id:null, sort:"list", blanks:true, unitOnly:true, extra:true };
+  const SS = { id:null, sort:"list", blanks:true, unitOnly:true, extra:true, wonOnly:true };
 
   const style = document.createElement("style");
   style.textContent = `
@@ -47,10 +47,11 @@
   box.id = "ss"; box.hidden = true; box.setAttribute("role","dialog"); box.setAttribute("aria-label","簽到表預覽");
   document.body.appendChild(box);
 
-  const shortAward = t => String(t||"").split(/[：:]/)[0].trim();
+  const shortAward = t => String(t||"").split(/[：:]/)[0].replace(/（[^）]*）/g,"").replace("星巴克禮券","星巴克").trim();
 
   function rowsFor(c){
     let list = isAward(c) ? officialFor(c.id).map(o=>({...o})) : peopleFor(c);
+    if(isAward(c) && SS.wonOnly) list = list.filter(p=>String(p.award||"").trim()); // 只列有領獎的人
     if(SS.unitOnly && c.listOnly && c.listUnit) list = list.filter(p=>normUnit(p.unit)===normUnit(c.listUnit));
     list = list.map(p=>({division:p.division||"", name:p.name||"",
       extra: isAward(c) ? shortAward(p.award) : isMeal(c) ? [p.meal,p.drink].filter(Boolean).join("／") : (p.note||"")}));
@@ -120,6 +121,7 @@
         <label>排序 <select data-ss="sort"><option value="list"${SS.sort==="list"?" selected":""}>依名單順序</option><option value="div"${SS.sort==="div"?" selected":""}>依事業部</option></select></label>
         <label><input type="checkbox" data-ss="extra"${SS.extra?" checked":""}> 顯示${isAward(c)?"獎勵":isMeal(c)?"餐點":"備註"}欄</label>
         <label><input type="checkbox" data-ss="blanks"${SS.blanks?" checked":""}> 補空白列（現場加簽）</label>
+        ${isAward(c) && officialFor(c.id).some(p=>!String(p.award||"").trim())?`<label><input type="checkbox" data-ss="wonOnly"${SS.wonOnly?" checked":""}> 只列有領獎的人</label>`:""}
         ${hasUnit?`<label><input type="checkbox" data-ss="unitOnly"${SS.unitOnly?" checked":""}> 只列${esc(c.listUnit)}業務中心</label>`:""}
         <button type="button" class="btn primary" data-ss="print">下載 PDF</button>
         <button type="button" class="btn link" data-ss="close">關閉</button>
