@@ -159,7 +159,10 @@
       const m = new Map(); const blank = [];
       for(const p of rows){ const v = String(get(p)||"").trim(); if(v){ if(!m.has(v)) m.set(v, []); m.get(v).push(p); } else blank.push(p); }
       if(!m.size || m.size > 12) return;   // 選項太多（例如手機號碼）就不統計
-      const arr = [...m].sort((a,b)=>b[1].length-a[1].length);
+      // 選項都有數字（例如「咖啡券 8 張」）就依數字由多到少；否則依人數由多到少
+      const numOf = v => { const x = String(v).match(/\d+(\.\d+)?/); return x ? parseFloat(x[0]) : null; };
+      const allNum = [...m.keys()].every(v=>numOf(v)!=null);
+      const arr = [...m].sort((a,b)=> allNum ? (numOf(b[0])-numOf(a[0]) || b[1].length-a[1].length) : (b[1].length-a[1].length));
       out.push({k, label, arr, blank});
     };
     const cc = colsOf(c, rows);
