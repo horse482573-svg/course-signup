@@ -225,6 +225,7 @@ function render(soft){
   $("#n-award").textContent = sortedAwards().length;
   $("#tab-admin").hidden = !S.isOwner;
   if(S.tab==="admin" && !S.isOwner) S.tab="shelf";
+  document.body.classList.toggle("tab-admin", S.tab==="admin" && !S.loginOpen);   // 課程管理在電腦上用寬版
   document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===S.tab && !S.loginOpen)));
   $("#adminBtn").textContent = S.isOwner ? "登出課程管理" : "舉辦人登入";
   $("#adminBtn").dataset.act = S.isOwner ? "admin-logout" : "admin-login";
@@ -638,7 +639,8 @@ function adminTable(){
   const rowsHTML = shown.map(c=>{
     const n = isAward(c) ? officialFor(c.id).length : peopleFor(c).length;
     const info = rosterInfo(c.id), st = adminStatus(c), open = S.adminOpen===c.id;
-    const when = isAward(c) ? `${c.date||"—"}<br><span class="who">至 ${c.endDate||"—"}</span>` : (c.date||"待定");
+    const sd = d => d ? d.replace(/^(\d{4})-0?(\d+)-0?(\d+)$/, (m,y,mo,da)=>`${y!==String(new Date().getFullYear())?y+"/":""}${mo}/${da}`) : "";
+    const when = isAward(c) ? `${sd(c.date)||"—"}<br><span class="who">至 ${sd(c.endDate)||"—"}</span>` : (sd(c.date)||"待定");
     return `<tr class="${open?"row-open":""}">
       <td class="t">${when}</td>
       <td class="name-cell"><button type="button" class="linkish" data-act="admin-open" data-id="${esc(c.id)}">${esc(c.title)}</button></td>

@@ -205,7 +205,9 @@ tr.row-me td{background:var(--accent-soft);font-weight:700}
 .seg-tabs{display:flex;flex-wrap:wrap;gap:6px}
 .admin-table td{vertical-align:middle}
 .admin-table .name-cell{white-space:normal;min-width:180px;max-width:340px}
-.admin-table .ops{display:flex;gap:6px;justify-content:flex-end}
+.admin-table .ops{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;min-width:150px}
+@media (min-width:1000px){body.tab-admin .wrap{max-width:1240px}}
+.admin-table td.t{white-space:nowrap}
 .admin-table tr.row-open td{background:var(--accent-soft)}
 .linkish{background:none;border:0;padding:0;font:inherit;font-weight:500;color:var(--ink);text-align:left;cursor:pointer}
 .linkish:hover{color:var(--accent);text-decoration:underline}
