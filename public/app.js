@@ -108,11 +108,11 @@ function visitsBox(){
   </section>`;
 }
 async function refresh(soft){
-  const typing = soft && document.activeElement && document.activeElement.closest && document.activeElement.closest("#bgbox, #ss");
+  const typing = soft && document.activeElement && document.activeElement.closest && document.activeElement.closest("#bgbox, #ss, #ntadmin");
   try{
     const q = S.me ? "?"+new URLSearchParams({n:S.me.name||"", d:S.me.division||"", u:S.me.unit||""}) : "";
     const r = await api("state"+q);
-    S.courses = r.courses; S.signups = r.signups; S.rosters = r.rosters || {};
+    S.courses = r.courses; S.signups = r.signups; S.rosters = r.rosters || {}; S.notice = r.notice || null;
     S.loaded = true;
     $("#sync").textContent = "最後更新 " + fmtTime(new Date().toISOString()) + " · 每 20 秒自動更新";
   }catch(e){
@@ -276,13 +276,17 @@ function shelfItem(c){
     ${skipCtl}
   </article>`;
 }
+/* 已結束的課程：預設隱藏，每台裝置記住開關 */
+S.showPast = ls.get("cs-showpast")==="1";
+const pastToggle = n => n ? `<div class="past-toggle"><label class="check"><input type="checkbox" data-act="toggle-past"${S.showPast?" checked":""}> 顯示已結束的課程（${n}）</label></div>` : "";
 function shelfView(){
   const cs = sortedCourses();
-  if(!cs.length) return listView(false);
+  const banner = typeof noticeBanner==="function" ? noticeBanner() : "";
+  if(!cs.length) return banner + listView(false);
   const up = cs.filter(c=>!(c.date && c.date<today())).sort((a,b)=>((myState(a)||isSkipped(a))?1:0)-((myState(b)||isSkipped(b))?1:0));
   const past = cs.filter(c=>c.date && c.date<today());
-  return (up.length?`<div class="shelf">${up.map(shelfItem).join("")}</div>`:`<div class="empty"><strong>目前沒有即將開課的課程</strong>新課程發布後會出現在這裡。</div>`)
-    + (past.length?`<h2 class="shelf-h">已結束的課程</h2><div class="shelf">${past.map(shelfItem).join("")}</div>`:"");
+  return banner + pastToggle(past.length) + (up.length?`<div class="shelf">${up.map(shelfItem).join("")}</div>`:`<div class="empty"><strong>目前沒有即將開課的課程</strong>新課程發布後會出現在這裡。</div>`)
+    + (past.length && S.showPast?`<h2 class="shelf-h">已結束的課程</h2><div class="shelf">${past.map(shelfItem).join("")}</div>`:"");
 }
 function gotoCourse(id){
   S.tab="all"; S.loginOpen=false; render();
@@ -492,8 +496,9 @@ function listView(onlyMine){
   }
   const upcoming = cs.filter(c=>!(c.date && c.date<today()));
   const past = cs.filter(c=>c.date && c.date<today());
-  return `<div class="list">${upcoming.map(courseCard).join("")}</div>`
-    + (past.length?`<h2 class="shelf-h">已結束的課程</h2><div class="list">${past.map(courseCard).join("")}</div>`:"");
+  const showPast = onlyMine || S.showPast;   // 我的報名永遠顯示全部
+  return (onlyMine?"":pastToggle(past.length)) + `<div class="list">${upcoming.map(courseCard).join("")}</div>`
+    + (past.length && showPast?`<h2 class="shelf-h">已結束的課程</h2><div class="list">${past.map(courseCard).join("")}</div>`:"");
 }
 
 /* ---------- 舉辦人 ---------- */
@@ -580,7 +585,7 @@ function adminView(){
     </form></section>`
     : `<div class="actions" style="margin-bottom:16px"><button class="btn primary" data-act="new">＋ 新增課程</button><button class="btn primary" data-act="new-award">＋ 新增獎勵</button>${S.courses.length?`<button class="btn" data-act="csv-all">下載全部報名名單 CSV</button>`:""}</div>`;
 
-  return form + visitsBox() + adminTable();
+  return form + (typeof noticeAdmin==="function" && !S.editing ? noticeAdmin() : "") + visitsBox() + adminTable();
 }
 function courseAdminRow(c){
     const r = peopleFor(c), cap=Number(c.capacity)||0, ext=!!c.signupUrl, info=rosterInfo(c.id);
@@ -986,6 +991,7 @@ document.addEventListener("change", ev=>{
   const inp = ev.target.closest("input[type=file][data-kind]");
   if(inp){ uploadImg(inp.dataset.kind, inp.files && inp.files[0]); inp.value=""; return; }
   if(ev.target.name==="impMode"){ S.impMode=ev.target.value; return; }
+  if(ev.target.dataset && ev.target.dataset.act==="toggle-past"){ S.showPast = ev.target.checked; ls.set("cs-showpast", S.showPast?"1":"0"); render(true); return; }
   if(ev.target.id==="imp-file"){
     const f=ev.target.files && ev.target.files[0]; if(!f) return;
     const r=new FileReader();
@@ -1026,6 +1032,7 @@ document.addEventListener("submit", async ev=>{
   if(S.adminKey){ try{ await api("admin/check",{}); S.isOwner=true; }catch(e){ S.adminKey=""; ss.del("cs-admin"); } }
   await refresh();
   logVisit(); await loadVisits(); if(S.visits) render(true);
+  if(typeof maybeAutoNotice==="function") maybeAutoNotice();
   const h = (location.hash||"").slice(1);
   if(h==="admin" && !S.isOwner){ S.loginOpen=true; render(); }
   else if(h==="awards"){ S.tab="award"; render(); }

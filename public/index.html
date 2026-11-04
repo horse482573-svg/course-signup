@@ -271,6 +271,39 @@ td.aw{white-space:normal;min-width:11em;line-height:1.45}
 .bgbox section.bg-need{background:rgba(192,57,43,.06);border-radius:8px;padding:2px 10px 8px}
 .bgbox label.check.sm{font-size:13px;gap:5px;white-space:nowrap}
 .bgbox label.check input[type=number]{width:4.5em!important;margin:0 4px}
+.past-toggle{display:flex;justify-content:flex-end;margin:0 0 10px;font-size:14px;color:var(--muted)}
+.nt-banner{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;width:100%;text-align:left;border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));background:color-mix(in srgb,var(--accent) 8%,var(--surface));color:var(--ink);border-radius:10px;padding:10px 14px;margin:0 0 12px;font:inherit;font-size:14.5px;cursor:pointer;position:relative}
+.nt-banner b{font-size:15px}.nt-banner small{color:var(--muted)}
+.nt-banner .nt-more{margin-left:auto;color:var(--accent);font-weight:600;white-space:nowrap}
+.nt-dot{position:absolute;top:8px;left:8px;width:9px;height:9px;border-radius:50%;background:#e5484d}
+#nt{position:fixed;inset:0;z-index:220;background:rgba(10,15,25,.55);display:flex;align-items:center;justify-content:center;padding:16px}
+#nt[hidden]{display:none}
+.nt-card{background:var(--surface);color:var(--ink);border-radius:14px;width:min(560px,100%);max-height:calc(100vh - 32px);display:flex;flex-direction:column;box-shadow:0 18px 50px rgba(0,0,0,.3)}
+.nt-head{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);font-size:17px}
+.nt-head small{color:var(--muted);font-size:13px}
+.nt-x{margin-left:auto;border:0;background:none;font-size:18px;color:var(--muted);cursor:pointer}
+.nt-body{padding:6px 16px 10px;overflow:auto}
+.nt-body h3{font-size:15px;margin:14px 0 6px}.nt-body h3 small{font-weight:400;color:var(--muted)}
+.nt-tag{margin:8px 0 2px;font-size:13px;color:var(--muted);font-weight:600}
+.nt-list{list-style:none;margin:0;padding:0}
+.nt-list li{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line)}
+.nt-list .nt-d{flex:none;width:5.8em;color:var(--muted);font-size:13.5px;font-variant-numeric:tabular-nums}
+.nt-list .nt-t{flex:1;min-width:0;font-size:14.5px}.nt-list .nt-t small{display:block;color:var(--muted);font-size:12.5px}
+.nt-duty{width:100%;border-collapse:collapse;font-size:14px}
+.nt-duty th,.nt-duty td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+.nt-duty td small{color:var(--muted);font-size:12px}
+.nt-duty tr.now td{background:color-mix(in srgb,var(--accent) 9%,transparent)}
+.nt-duty tr.me td{font-weight:700}
+.nt-me{background:#fff6d6;color:#7a5a00;border-radius:8px;padding:8px 10px;margin:10px 0 0;font-weight:600}
+.nt-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;border-top:1px solid var(--line)}
+.ntadmin h3{font-size:15px;margin:16px 0 6px}.ntadmin h3 small{font-weight:400;color:var(--muted)}
+.nt-pick{list-style:none;padding:0;margin:0}.nt-pick li{padding:3px 0}
+.nt-items input,.ntadmin textarea{font:inherit;font-size:14px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)}
+.nt-items input[type=text]{width:100%;min-width:8em}
+.ntadmin textarea{width:100%;margin-top:6px}
+.nt-dutyadm tr.old td{color:var(--muted);text-decoration:line-through}
+.nt-dutyadm tr.now td{font-weight:700}
+.nt-items .x{border:0;background:none;color:var(--muted);cursor:pointer;font-size:15px}
 .stamp-skip{background:var(--muted);color:var(--surface)}
 .book.skipped .cover img,.book.skipped .cover .ph{filter:grayscale(.6);opacity:.75}
 .skip-toggle{display:flex;align-items:center;gap:8px;align-self:flex-start;background:none;border:0;padding:2px 0;font:inherit;font-size:13px;color:var(--muted);cursor:pointer}
@@ -330,6 +363,7 @@ footer.foot{margin-top:48px;padding-top:16px;border-top:1px solid var(--line);di
 <script src="app.js"></script>
 <script src="signsheet.js"></script>
 <script src="budget.js"></script>
+<script src="notice.js"></script>
 <script>
 (function(){
   var bar=document.getElementById("stickyTop"), root=document.documentElement;

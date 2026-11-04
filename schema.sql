@@ -22,5 +22,11 @@ CREATE TABLE IF NOT EXISTS roster_prev (
   saved_at    TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS notice (
+  id         TEXT PRIMARY KEY,   -- 'main'
+  data       TEXT NOT NULL,      -- JSON：其他事項、隱藏的課程、主持／音控排班
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS images (id TEXT PRIMARY KEY, mime TEXT NOT NULL, body BLOB NOT NULL, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_signups_pkey ON signups(pkey);

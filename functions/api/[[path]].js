@@ -132,11 +132,14 @@ export async function onRequest({ request, env, params }) {
   try {
     // ---------- public reads ----------
     if (method === "GET" && path === "state") {
-      const [cs, ss, rs] = await db.batch([
+      const [cs, ss, rs, ns] = await db.batch([
         db.prepare("SELECT id, data FROM courses"),
         db.prepare("SELECT course_id, pkey, unit, division, name, title, via, at FROM signups ORDER BY at"),
         db.prepare("SELECT course_id, entries, imported_at FROM rosters"),
+        db.prepare("SELECT data, updated_at FROM notice WHERE id = 'main'"),
       ]);
+      let notice = null;
+      try { const n = ns.results[0]; if (n) notice = { ...JSON.parse(n.data), updatedAt: n.updated_at }; } catch (e) {}
       const url = new URL(request.url);
       const viewer = { name: str(url.searchParams.get("n"), 30), division: str(url.searchParams.get("d"), 30), unit: str(url.searchParams.get("u"), 20) };
       const vKey = viewer.name ? keyOf(viewer) : "";
@@ -173,6 +176,7 @@ export async function onRequest({ request, env, params }) {
         ok: true,
         admin,
         courses,
+        notice,
         signups,
         rosters,
       });
@@ -274,6 +278,19 @@ export async function onRequest({ request, env, params }) {
         if (!id || !body.budget || typeof body.budget !== "object") return J({ ok: false, error: "bad_input" }, 400);
         if (text.length > 60000) return J({ ok: false, error: "too_large" }, 413);
         await db.prepare("INSERT OR REPLACE INTO budgets (course_id, data, updated_at) VALUES (?, ?, ?)").bind(id, text, now()).run();
+        return J({ ok: true });
+      }
+      // ---------- 公告（大家都看得到）----------
+      case "admin/notice": {
+        const n = body.notice || {};
+        const clean = {
+          items: (Array.isArray(n.items) ? n.items : []).slice(0, 30).map(x => ({ date: str(x?.date, 10), title: str(x?.title, 60), desc: str(x?.desc, 200), url: /^https?:\/\//i.test(str(x?.url, 500)) ? str(x?.url, 500) : "" })).filter(x => x.title),
+          hidden: (Array.isArray(n.hidden) ? n.hidden : []).slice(0, 100).map(x => str(x, 40)).filter(Boolean),
+          duty: (Array.isArray(n.duty) ? n.duty : []).slice(0, 60).map(x => ({ start: str(x?.start, 10), end: str(x?.end, 10),
+            host: { division: str(x?.host?.division, 30), name: str(x?.host?.name, 30) }, sound: { division: str(x?.sound?.division, 30), name: str(x?.sound?.name, 30) } }))
+            .filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x.start)),
+        };
+        await db.prepare("INSERT OR REPLACE INTO notice (id, data, updated_at) VALUES ('main', ?, ?)").bind(JSON.stringify(clean), now()).run();
         return J({ ok: true });
       }
       case "admin/check":
