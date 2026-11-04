@@ -5,7 +5,8 @@ A=json.load(open(sys.argv[1])); days=A["days"]
 DIV=json.load(open(sys.argv[2])) if len(sys.argv)>2 else {}
 EXCLUDE={"陳櫻燕","蘇宜君","陳卜瑄","陳映潔","葉銘巖"}                      # 行政人員，不記入
 HOL={"2026-10-09","2026-10-23","2026-10-26"}    # 放假日：全員算出席，不算天數、週三不送
-GONG={"2026-10-16":set("方嘉猷 陳彥伯 毛志仁 吳思賢 吳滿 翁淑卿 朱玉琴 丁成義 周啓玲 李依萱 莊人豪 姚採蓮 湛茂瑜 施秀珍 黃昱樺 徐嫚娸 簡素能".split())}
+GONG={"2026-10-16":set("方嘉猷 陳彥伯 毛志仁 吳思賢 吳滿 翁淑卿 朱玉琴 丁成義 周啓玲 李依萱 莊人豪 姚採蓮 湛茂瑜 施秀珍 黃昱樺 徐嫚娸 簡素能".split()),
+      "2026-10-28":set("鄭志弘 簡素能 朱玉琴 施秀珍 曾銀芝 湛茂瑜".split())}
 START=dt.date(2026,10,5); STAR_REF="湛翰揚"
 # 計分日：10/2 + 10/5 起每週一三五，到資料最後一天（或放假日）為止
 last=max([dt.date.fromisoformat(d) for d in days]+[dt.date.fromisoformat(h) for h in HOL])
