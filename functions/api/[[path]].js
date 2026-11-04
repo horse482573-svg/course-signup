@@ -49,7 +49,13 @@ function cleanCourse(c) {
   o.starLabel = str(c?.starLabel, 20);
   o.asOf = str(c?.asOf, 20);
   o.signLabel = str(c?.signLabel, 12);
-  o.signOff = c?.signOff === true; // true＝簽到表不印簽到欄（只當名單用） // 簽到表最後一欄的名稱（預設：課程「簽到」、獎勵「簽收」）
+  o.signOff = c?.signOff === true;
+  // 簽到表要產出哪些文件：sign 簽到表、stats 統計表、names 統計表附名單、skip 不統計的欄位
+  if (c?.sheetDocs && typeof c.sheetDocs === "object") {
+    const d = c.sheetDocs;
+    o.sheetDocs = { sign: d.sign !== false, stats: d.stats === true, names: d.names !== false,
+      skip: (Array.isArray(d.skip) ? d.skip : []).slice(0, 30).map(x => str(x, 40)).filter(Boolean) };
+  } // true＝簽到表不印簽到欄（只當名單用） // 簽到表最後一欄的名稱（預設：課程「簽到」、獎勵「簽收」）
   // 欄位設定：k＝欄位代號（division/name/meal/drink/note/award/days/x:表頭/b:空白欄），sign＝印在簽到表，pub＝同事在網站上看得到
   if (Array.isArray(c?.cols)) {
     o.cols = c.cols.slice(0, 24).map(x => ({ k: str(x?.k, 40), label: str(x?.label, 20), sign: x?.sign === true, pub: x?.pub === true })).filter(x => x.k);

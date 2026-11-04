@@ -173,10 +173,12 @@ td .x{border:0;background:none;color:var(--muted);cursor:pointer;font-size:16px;
 .mealbox-row b{font-size:15px}
 .meal-line{color:var(--accent)!important;font-weight:500}
 .tallies{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:12px 0}
-.tally{border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0}
-.tally h4{margin:0 0 6px;font-size:12px;letter-spacing:.08em;color:var(--muted);font-weight:500}
-.tally-row{display:flex;justify-content:space-between;gap:12px;font-size:14px;padding:3px 0}
-.tally-sum{border-top:1px solid var(--line);margin-top:4px;padding-top:6px;font-weight:700}
+.tally{border:1px solid var(--line);border-radius:8px;padding:10px 14px;min-width:0;display:grid;grid-template-columns:max-content max-content;column-gap:2cm;justify-content:start;align-content:start}
+.tally h4{grid-column:1/-1;margin:0 0 6px;font-size:12px;letter-spacing:.08em;color:var(--muted);font-weight:500}
+.tally-row{display:contents;font-size:14px}
+.tally-row>span{padding:3px 0;font-size:14px}
+.tally-row>.num{text-align:right}
+.tally-sum>span{border-top:1px solid var(--line);margin-top:4px;padding-top:6px;font-weight:700}
 /* 公司獎勵 */
 .award-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin-bottom:14px}
 .award-head h2{font-size:20px}
