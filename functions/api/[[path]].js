@@ -54,7 +54,8 @@ function cleanCourse(c) {
   if (c?.sheetDocs && typeof c.sheetDocs === "object") {
     const d = c.sheetDocs;
     o.sheetDocs = { sign: d.sign !== false, stats: d.stats === true, names: d.names !== false,
-      skip: (Array.isArray(d.skip) ? d.skip : []).slice(0, 30).map(x => str(x, 40)).filter(Boolean) };
+      skip: (Array.isArray(d.skip) ? d.skip : []).slice(0, 30).map(x => str(x, 40)).filter(Boolean),
+      prizes: Object.fromEntries(Object.entries(d.prizes && typeof d.prizes === "object" ? d.prizes : {}).slice(0, 10).map(([k, v]) => [str(k, 30), v === true]).filter(([k]) => k)) };
   } // true＝簽到表不印簽到欄（只當名單用） // 簽到表最後一欄的名稱（預設：課程「簽到」、獎勵「簽收」）
   // 欄位設定：k＝欄位代號（division/name/meal/drink/note/award/days/x:表頭/b:空白欄），sign＝印在簽到表，pub＝同事在網站上看得到
   if (Array.isArray(c?.cols)) {

@@ -43,6 +43,7 @@
 .ss-tbl td.d{font-size:11pt;line-height:1.25;word-break:break-all}
 .ss-tbl td.nm{font-size:12pt;font-weight:500;white-space:nowrap!important}
 .ss-tbl td.x{font-size:9pt;line-height:1.25;word-break:break-all}
+.ss-tbl td.q{font-size:14pt;font-weight:700;color:#000}
 .ss-foot{display:flex;justify-content:space-between;font-size:8.5pt;color:#333;padding-top:2mm}
 .st-doc{width:190mm;background:#fff;color:#222;box-shadow:0 2px 10px rgba(0,0,0,.18);box-sizing:border-box;padding:0 .6mm 4mm;font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}
 .st-head{border-bottom:.35mm solid #222!important;margin-bottom:4mm}
@@ -90,19 +91,21 @@
   }
   const signOn = c => !(SS.signOff ?? c.signOff);
   const signLab = c => (SS.signLabel ?? c.signLabel) || (isAward(c) ? "簽收" : "簽到");
-  const cellText = (p, k) => k==="award" ? shortAward(p.award) : String(colVal(p, k)||"");
+  const cellText = (p, k) => k==="_q" ? String(p._q) : k==="award" ? shortAward(p.award) : String(colVal(p, k)||"");
   // 依內容長度估欄寬（mm）
   function widthOf(col, rows){
     if(col.k==="division") return Math.min(30, Math.max(18, Math.max(...rows.map(p=>String(p.division||"").length), 3) * 3.9 + 3));
     if(col.k==="name") return 17;
+    if(col.k==="_q") return 14;
     const longest = Math.max(col.label.length, ...rows.map(p=>cellText(p,col.k).length));
     const base = col.blank ? Math.max(18, col.label.length*4.2) : Math.min(26, Math.max(13, longest*2.9));
     return base;
   }
 
-  function build(c){
-    const rows = rowsFor(c), n = rows.length;
-    const cols = (SS.cols || colsOf(c)).filter(x=>x.sign);
+  function build(c, o){
+    o = o || {};
+    const rows = o.rows || rowsFor(c), n = rows.length;
+    const cols = o.cols || (SS.cols || colsOf(c)).filter(x=>x.sign);
     // 欄寬：序號 8mm、簽名至少 24mm；放不下就改單欄
     const widths = cols.map(x=>widthOf(x, rows));
     const sg = signOn(c) ? 22 : 0;
@@ -117,14 +120,14 @@
     const perCol = single ? Math.max(10, perPage) : Math.max(10, Math.ceil(perPage / 2));
     // 表格區高度約 240mm（扣掉標題、頁尾、表頭）
     const rowH = Math.max(9, Math.min(20, Math.floor((236 / perCol) * 10) / 10));
-    const kind = !signOn(c) ? "名單" : isAward(c) ? "領獎簽收表" : "簽到表";
+    const kind = o.kind || (!signOn(c) ? "名單" : isAward(c) ? "領獎簽收表" : "簽到表");
     const dShort = (!isAward(c) && c.date) ? (d=>`${d.getMonth()+1}/${d.getDate()}(${WD[d.getDay()]})`)(new Date(c.date+"T00:00:00")) : "";
-    const sub = [isAward(c) ? "" : c.time, isAward(c) ? "" : c.location].filter(Boolean).join("　");
+    const sub = o.sub != null ? o.sub : [isAward(c) ? "" : c.time, isAward(c) ? "" : c.location].filter(Boolean).join("　");
     // 不印簽到欄時，最後一個資料欄自動撐滿剩下的寬度
     const colgroup = `<col style="width:8mm">${widths.map((w,i)=>!sg && i===widths.length-1 ? "<col>" : `<col style="width:${(w*scale).toFixed(1)}mm">`).join("")}${sg?"<col>":""}`;
     const sgTh = sg ? `<th>${esc(signLab(c))}</th>` : "", sgTd = sg ? "<td></td>" : "";
     const head = `<tr><th></th>${cols.map(x=>`<th>${esc(x.label)}</th>`).join("")}${sgTh}</tr>`;
-    const cls = k => k==="division" ? "d" : k==="name" ? "nm" : "x";
+    const cls = k => k==="division" ? "d" : k==="name" ? "nm" : k==="_q" ? "q" : "x";
     const cell = (r, i) => r
       ? `<tr style="height:${rowH}mm"><td class="n">${i}</td>${cols.map(x=>`<td class="${cls(x.k)}">${esc(cellText(r,x.k))}</td>`).join("")}${sgTd}</tr>`
       : `<tr style="height:${rowH}mm"><td class="n"></td>${cols.map(()=>"<td></td>").join("")}${sgTd}</tr>`;
@@ -151,8 +154,27 @@
     return {html, n, pages, single};
   }
 
+  /* ---------- 依獎品分開的簽收表（例如：星巴克咖啡券、一般咖啡券）---------- */
+  function prizeParts(award){
+    return String(award||"").split(/[：:]/)[0].split(/[＋+]/).map(x=>x.replace(/（[^）]*）|\([^)]*\)/g,"").trim())
+      .map(x=>{ const m = x.match(/^(.+?)\s*(\d+)\s*(張|份|個|組|盒|杯)?$/); return m ? {name:m[1].trim(), qty:+m[2], unit:m[3]||"張"} : null; }).filter(Boolean);
+  }
+  function prizesOf(c){
+    const out = [];
+    for(const p of officialFor(c.id)) for(const x of prizeParts(p.award)) if(!out.includes(x.name)) out.push(x.name);
+    return out.sort((a,b)=>(/星巴克/.test(b)?1:0)-(/星巴克/.test(a)?1:0));   // 星巴克排前面
+  }
+  const prizeLabel = nm => /星巴克/.test(nm) ? "星巴克咖啡券" : nm==="咖啡券" ? "一般咖啡券" : nm;
+  function buildPrize(c, nm){
+    let rows = rowsFor(c).map(p=>{ const x = prizeParts(p.award).find(y=>y.name===nm); return x ? {...p, _q:x.qty, _u:x.unit} : null; }).filter(Boolean);
+    if(SS.sort!=="div") rows.sort((a,b)=>b._q-a._q);
+    const total = rows.reduce((s,p)=>s+p._q,0), unit = (rows[0]||{})._u || "張";
+    return build(c, { rows, kind: prizeLabel(nm)+" 簽收表", sub: `共 ${rows.length} 人・${total} ${unit}`,
+      cols: [{k:"division",label:"事業部"},{k:"name",label:"姓名"},{k:"_q",label:unit+"數"}] });
+  }
+
   /* ---------- 統計表 ---------- */
-  const docsOf = c => SS.docs || (SS.docs = {...{sign:true, stats:false, names:true, skip:[]}, ...(c.sheetDocs||{})});
+  const docsOf = c => SS.docs || (SS.docs = {...{sign:true, stats:false, names:true, skip:[], prizes:{}}, ...(c.sheetDocs||{})});
   function statFields(c, rows){
     const out = [];
     const add = (k, label, get) => {
@@ -225,22 +247,26 @@
     const d = docsOf(c);
     const {html, n, pages, single} = build(c);
     const st = buildStats(c);
+    const prizes = isAward(c) ? prizesOf(c) : [];
+    const prizeOn = prizes.length>1 ? prizes.filter(nm=>(d.prizes||{})[nm]) : [];
+    const prizeHTML = prizeOn.map(nm=>buildPrize(c, nm).html).join("");
+    const anyDoc = d.sign || d.stats || prizeOn.length;
     const hasUnit = !!(c.listOnly && c.listUnit);
     const y = box.scrollTop;
     box.innerHTML = `<div class="ss-bar">
         <b>${!signOn(c)?"名單":isAward(c)?"領獎簽收表":"簽到表"}預覽 · ${n} 人${d.sign?` · ${pages} 頁${single?" · 單欄":""}`:""}</b>
-        <span class="ss-docs">產出內容：<label><input type="checkbox" data-ss-doc="sign"${d.sign?" checked":""}> ${!signOn(c)?"名單":isAward(c)?"簽收表":"簽到表"}</label><label><input type="checkbox" data-ss-doc="stats"${d.stats?" checked":""}> 統計表</label></span>
+        <span class="ss-docs">產出內容：<label><input type="checkbox" data-ss-doc="sign"${d.sign?" checked":""}> ${!signOn(c)?"名單":isAward(c)?(prizes.length>1?"簽收表（合併）":"簽收表"):"簽到表"}</label>${prizes.length>1?prizes.map(nm=>`<label><input type="checkbox" data-ss-prize="${esc(nm)}"${(d.prizes||{})[nm]?" checked":""}> ${esc(prizeLabel(nm))}簽收表</label>`).join(""):""}<label><input type="checkbox" data-ss-doc="stats"${d.stats?" checked":""}> 統計表</label></span>
         <label>排序 <select data-ss="sort"><option value="list"${SS.sort==="list"?" selected":""}>依名單順序</option><option value="div"${SS.sort==="div"?" selected":""}>依事業部</option></select></label>
         <label><input type="checkbox" data-ss="blanks"${SS.blanks?" checked":""}> 補空白列（現場加簽）</label>
         ${isAward(c) && officialFor(c.id).some(p=>!String(p.award||"").trim())?`<label><input type="checkbox" data-ss="wonOnly"${SS.wonOnly?" checked":""}> 只列有領獎的人</label>`:""}
         ${hasUnit?`<label><input type="checkbox" data-ss="unitOnly"${SS.unitOnly?" checked":""}> 只列${esc(c.listUnit)}業務中心</label>`:""}
         <button type="button" class="btn" data-ss="panel" aria-expanded="${SS.panel}">${SS.panel?"收起欄位設定":"欄位設定"}</button>
-        <button type="button" class="btn primary" data-ss="print"${d.sign||d.stats?"":" disabled"}>下載 PDF</button>
+        <button type="button" class="btn primary" data-ss="print"${anyDoc?"":" disabled"}>下載 PDF</button>
         <button type="button" class="btn link" data-ss="close">關閉</button>
         ${SS.panel?settingsPanel(c):""}
         ${d.stats?`<span class="ss-statset">統計欄位：${st.all.length?st.all.map(f=>`<label><input type="checkbox" data-ss-stat="${esc(f.k)}"${d.skip.includes(f.k)?"":" checked"}> ${esc(f.label)}</label>`).join(""):'<span class="fixed">（沒有可統計的欄位）</span>'}<label><input type="checkbox" data-ss-doc="names"${d.names?" checked":""}> 附名單</label></span>`:""}
         <span class="ss-hint">按「下載 PDF」後，在列印視窗的目的地選「另存為 PDF」（手機選「儲存為 PDF」或分享 → 列印）。紙張 A4、直式；建議把「頁首和頁尾」關掉。欄位太多時會自動改成單欄。</span>
-      </div><div class="ss-pages">${d.sign?html:""}${d.stats?st.html:""}${!d.sign&&!d.stats?'<p class="st-none" style="padding:30px">請至少勾選一種產出內容。</p>':""}</div>`;
+      </div><div class="ss-pages">${d.sign?html:""}${prizeHTML}${d.stats?st.html:""}${!anyDoc?'<p class="st-none" style="padding:30px">請至少勾選一種產出內容。</p>':""}</div>`;
     fit(); box.scrollTop = y;
   }
 
@@ -278,6 +304,7 @@
   box.addEventListener("change", e=>{
     const t = e.target;
     if(t.dataset.ssDoc){ const c=S.courses.find(x=>x.id===SS.id); const d=docsOf(c); d[t.dataset.ssDoc]=t.checked; draw(); saveDocs(); return; }
+    if(t.dataset.ssPrize){ const c=S.courses.find(x=>x.id===SS.id); const d=docsOf(c); d.prizes = {...(d.prizes||{}), [t.dataset.ssPrize]: t.checked}; draw(); saveDocs(); return; }
     if(t.dataset.ssStat){ const c=S.courses.find(x=>x.id===SS.id); const d=docsOf(c); const k=t.dataset.ssStat; d.skip = t.checked ? d.skip.filter(x=>x!==k) : [...d.skip, k]; draw(); saveDocs(); return; }
     if(t.dataset.col==="signon"){ SS.signOff = !t.checked; SS.dirty = true; draw(); return; }
     if(t.dataset.col==="sign" || t.dataset.col==="pub"){ SS.cols[+t.dataset.i][t.dataset.col] = t.checked; SS.dirty = true; draw(); return; }
@@ -302,7 +329,11 @@
     if(b.dataset.ss==="print"){
       const c = S.courses.find(x=>x.id===SS.id);
       const old = document.title;
-      document.title = (c ? c.title.replace(/[\\/:*?"<>|]/g," ").trim() : "課程") + (SS.docs && !SS.docs.sign && SS.docs.stats ? "_統計表" : c&&!signOn(c) ? "_名單" : c&&isAward(c) ? "_領獎簽收表" : "_簽到表") + (SS.docs && SS.docs.sign && SS.docs.stats ? "＋統計表" : "");
+      document.title = (c ? c.title.replace(/[\\/:*?"<>|]/g," ").trim() : "課程") + "_" + (()=>{ const d=SS.docs||{}, names=[];
+        if(d.sign) names.push(c&&!signOn(c) ? "名單" : c&&isAward(c) ? "領獎簽收表" : "簽到表");
+        if(c&&isAward(c)) for(const nm of prizesOf(c)) if((d.prizes||{})[nm] && prizesOf(c).length>1) names.push(prizeLabel(nm)+"簽收表");
+        if(d.stats) names.push("統計表");
+        return names.join("＋") || "簽到表"; })();
       const done = ()=>{ document.title = old; window.removeEventListener("afterprint", done); };
       window.addEventListener("afterprint", done);
       setTimeout(()=>window.print(), 50);
