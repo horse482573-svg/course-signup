@@ -37,7 +37,11 @@
     const extra = staffN + g;                        // 名單中的講師／工作人員＋名單外嘉賓
     const expected = rows.reduce((s,r)=>s+num(r.tier.fee),0);
     const received = rows.filter(r=>r.paid).reduce((s,r)=>s+num(r.tier.fee),0);
-    const sponsor = b.sponsors.reduce((s,x)=>s+num(x.amount),0);
+    // 贊助：固定金額，或每位報名者補助多少（每人）
+    const sponFixed = b.sponsors.filter(x=>x.kind!=="per").reduce((s,x)=>s+num(x.amount),0);
+    const sponPer = b.sponsors.filter(x=>x.kind==="per").reduce((s,x)=>s+num(x.amount),0);
+    const sponAt = n => sponFixed + sponPer*n;
+    const sponsor = sponAt(N);
     const perItems = b.costs.filter(x=>x.kind==="per");
     const per = perItems.reduce((s,x)=>s+num(x.amount),0);
     const perGuest = perItems.filter(guestFlag).reduce((s,x)=>s+num(x.amount),0);
@@ -48,14 +52,14 @@
     const firstFee = num(((b.tiers.find(t=>!t.staff))||b.tiers[0]||{}).fee);
     const partFee = part.reduce((s,r)=>s+num(r.tier.fee),0);
     const avgFee = N ? partFee/N : firstFee;
-    const denom = avgFee - per*f;
-    const need = denom > 0 ? Math.max(0, Math.ceil((fixedEff*f - sponsor) / denom - 1e-9)) : null;
+    const denom = avgFee + sponPer - per*f;
+    const need = denom > 0 ? Math.max(0, Math.ceil((fixedEff*f - sponFixed) / denom - 1e-9)) : null;
     const trialN = b.trial === "" || b.trial == null ? null : Math.max(0, Math.round(num(b.trial)));
     const answered = !!(b.guest && (b.guest.answer==="yes" || b.guest.answer==="no"));
-    return { rows, N, staffN, g, extra, answered, f, expected, received, sponsor, per, fixed, fixedEff, qty, cost:costAt(N), avgFee, need, denom,
+    return { rows, N, staffN, g, extra, answered, f, expected, received, sponsor, sponFixed, sponPer, per, fixed, fixedEff, qty, cost:costAt(N), avgFee, need, denom,
       remainExp: expected + sponsor - costAt(N), remainNow: received + sponsor - costAt(N),
       paidN: part.filter(r=>r.paid).length,
-      trialN, trial: trialN==null ? null : avgFee*trialN + sponsor - costAt(trialN) };
+      trialN, trial: trialN==null ? null : avgFee*trialN + sponAt(trialN) - costAt(trialN) };
   }
   window.budgetCalc = calc;
 
@@ -76,7 +80,7 @@
       ? `<p class="bg-bad">平均報名費（${money(r.avgFee)}）不夠支付每人支出（${money(r.per*r.f)}），人數越多越虧，請調整報名費或每人支出。</p>`
       : r.need===0 ? `<p>損益平衡：贊助已經足夠支付固定支出，只要每位報名者的報名費高於每人支出，就不會虧 ✅</p>`
       : `<p>損益平衡：至少需要 <b>${r.need}</b> 人報名${r.N?`（目前 ${r.N} 人 ${r.N>=r.need?`✅ 多 ${r.N-r.need} 人`:`⚠️ 還差 ${r.need-r.N} 人`}）`:""}</p>
-         <p class="who">計算：（固定支出 ${money(r.fixedEff*r.f)}${r.extra?`，含講師／嘉賓 ${r.extra} 位的餐點`:""} − 贊助 ${money(r.sponsor)}）÷（平均報名費 ${money(r.avgFee)} − 每人支出 ${money(r.per*r.f)}）${num(b.buffer)?`，支出已含緩衝 ${num(b.buffer)}%`:""}</p>`;
+         <p class="who">計算：（固定支出 ${money(r.fixedEff*r.f)}${r.extra?`，含講師／嘉賓 ${r.extra} 位的餐點`:""} − 固定贊助 ${money(r.sponFixed)}）÷（平均報名費 ${money(r.avgFee)}${r.sponPer?` ＋ 每人贊助 ${money(r.sponPer)}`:""} − 每人支出 ${money(r.per*r.f)}）${num(b.buffer)?`，支出已含緩衝 ${num(b.buffer)}%`:""}</p>`;
     return `<table class="bg-res"><thead><tr><th></th><th>已收</th><th>預計（全部繳齊）</th></tr></thead><tbody>
         <tr><td>報名費</td><td>${money(r.received)}<small>（${r.paidN} 人）</small></td><td>${money(r.expected)}<small>（${r.N} 人${r.staffN?`＋講師／工作人員 ${r.staffN}`:""}）</small></td></tr>
         <tr><td>＋ 贊助</td><td>${money(r.sponsor)}</td><td>${money(r.sponsor)}</td></tr>
@@ -103,7 +107,7 @@
     b.guest = b.guest || {answer:null, n:0};
     const tiers = b.tiers.map((t,i)=>`<tr>
         <td><input type="text" data-bg="tiers.${i}.name" value="${esc(t.name)}" maxlength="20" aria-label="身分名稱"></td>
-        <td>NT$ <input type="number" min="0" step="1" inputmode="numeric" data-bg="tiers.${i}.fee" value="${t.fee}" aria-label="報名費"></td>
+        <td>NT$ <input type="number" min="0" step="1" inputmode="numeric" data-bg="tiers.${i}.fee" value="${num(t.fee)||""}" placeholder="0" aria-label="報名費"></td>
         <td class="c"><input type="checkbox" data-bg="staff" data-i="${i}"${t.staff?" checked":""} aria-label="不算報名者"></td>
         <td class="t">${tierCount(t)} 人</td><td class="t">${money(num(t.fee)*tierCount(t))}</td>
         <td>${b.tiers.length>1?`<button type="button" class="x" data-bg="del:tiers.${i}" aria-label="刪除">✕</button>`:""}</td></tr>`).join("");
@@ -113,12 +117,14 @@
         <td class="c">${x.staff?`<span class="who">—</span>`:b.manual?`<input type="checkbox" data-bg="paid" data-k="${esc(k)}"${x.paid?" checked":""} aria-label="已繳">`:(x.paid?"已繳":`<span class="bg-bad">待繳</span>`)}</td></tr>`; }).join("");
     const sponsors = b.sponsors.map((s,i)=>`<tr>
         <td><input type="text" data-bg="sponsors.${i}.name" value="${esc(s.name)}" maxlength="30" placeholder="贊助單位" aria-label="贊助單位"></td>
-        <td>NT$ <input type="number" min="0" step="1" inputmode="numeric" data-bg="sponsors.${i}.amount" value="${s.amount}" aria-label="金額"></td>
+        <td><select data-bg="sponsors.${i}.kind"><option value="fixed"${s.kind!=="per"?" selected":""}>固定</option><option value="per"${s.kind==="per"?" selected":""}>每人</option></select></td>
+        <td>NT$ <input type="number" min="0" step="1" inputmode="numeric" data-bg="sponsors.${i}.amount" value="${num(s.amount)||""}" placeholder="0" aria-label="金額"></td>
+        <td class="t">${s.kind==="per"?`× ${r.N} = ${money(num(s.amount)*r.N)}`:money(num(s.amount))}</td>
         <td><button type="button" class="x" data-bg="del:sponsors.${i}" aria-label="刪除">✕</button></td></tr>`).join("");
     const costs = b.costs.map((x,i)=>`<tr>
         <td><input type="text" data-bg="costs.${i}.name" value="${esc(x.name)}" maxlength="20" aria-label="項目"></td>
         <td><select data-bg="costs.${i}.kind"><option value="per"${x.kind==="per"?" selected":""}>每人</option><option value="fixed"${x.kind!=="per"?" selected":""}>固定</option></select></td>
-        <td>NT$ <input type="number" min="0" step="1" inputmode="numeric" data-bg="costs.${i}.amount" value="${x.amount}" aria-label="金額"></td>
+        <td>NT$ <input type="number" min="0" step="1" inputmode="numeric" data-bg="costs.${i}.amount" value="${num(x.amount)||""}" placeholder="0" aria-label="金額"></td>
         <td>${x.kind==="per"?`<label class="check sm"><input type="checkbox" data-bg="cguest" data-i="${i}"${guestFlag(x)?" checked":""}> 含講師／嘉賓</label>`:""}</td>
         <td class="t">${x.kind==="per"?`× ${r.qty(x)} = ${money(num(x.amount)*r.qty(x))}`:money(num(x.amount))}</td>
         <td><button type="button" class="x" data-bg="del:costs.${i}" aria-label="刪除">✕</button></td></tr>`).join("");
@@ -133,19 +139,19 @@
           <div class="tbl"><table class="bg-t"><thead><tr><th>事業部</th><th>姓名</th><th>身分</th><th>已繳</th></tr></thead><tbody>${people||`<tr><td colspan="4" class="who">還沒有名單</td></tr>`}</tbody></table></div>
           ${b.manual?`<div class="actions"><button type="button" class="btn sm" data-bg="paidall">全部勾選</button><button type="button" class="btn sm link" data-bg="paidnone">全部取消</button></div>`:""}
         </details></section>
-      <section><h5>③ 贊助</h5>${sponsors?`<div class="tbl"><table class="bg-t"><tbody>${sponsors}</tbody></table></div>`:""}
+      <section><h5>③ 贊助</h5>${sponsors?`<div class="tbl"><table class="bg-t"><thead><tr><th>贊助單位</th><th>計算方式</th><th>金額</th><th>小計</th><th></th></tr></thead><tbody>${sponsors}</tbody></table></div>`:""}
         <button type="button" class="btn sm" data-bg="add:sponsors">＋ 新增贊助</button></section>
       <section class="${r.answered?"":"bg-need"}"><h5>④ 確認事項</h5>
         <p><b>講師／嘉賓是否用餐？</b><span class="bg-bad">（必填）</span></p>
         <label class="check"><input type="radio" name="bg-guest" data-bg="guest-yes"${b.guest.answer==="yes"?" checked":""}> 是　→ 名單外另有
-          <input type="number" min="0" step="1" inputmode="numeric" data-bg="guest.n" value="${b.guest.n||0}" aria-label="名單外用餐人數"${b.guest.answer==="yes"?"":" disabled"}> 位講師／嘉賓用餐</label>
+          <input type="number" min="0" step="1" inputmode="numeric" data-bg="guest.n" value="${num(b.guest.n)||""}" placeholder="0" aria-label="名單外用餐人數"${b.guest.answer==="yes"?"":" disabled"}> 位講師／嘉賓用餐</label>
         <label class="check"><input type="radio" name="bg-guest" data-bg="guest-no"${b.guest.answer==="no"?" checked":""}> 否</label>
         ${r.staffN?`<p class="who">名單中已有講師／工作人員 ${r.staffN} 位，已算入有勾「含講師／嘉賓」的項目；上面只要填名單外的人數。</p>`:""}
         ${r.answered?"":`<p class="bg-bad">⚠️ 尚未確認：課程總表會顯示「待確認」，PDF 也會標示「講師用餐未確認」。</p>`}
       </section>
       <section><h5>⑤ 支出</h5><div class="tbl"><table class="bg-t"><thead><tr><th>項目</th><th>計算方式</th><th>金額</th><th></th><th>小計</th><th></th></tr></thead><tbody>${costs}</tbody></table></div>
         <button type="button" class="btn sm" data-bg="add:costs">＋ 新增項目</button>
-        <p class="bg-buf">預留緩衝 <input type="number" min="0" max="100" step="1" inputmode="numeric" data-bg="buffer" value="${b.buffer||0}" aria-label="緩衝百分比"> %（支出多抓一點，以防臨時開銷）</p></section>
+        <p class="bg-buf">預留緩衝 <input type="number" min="0" max="100" step="1" inputmode="numeric" data-bg="buffer" value="${num(b.buffer)||""}" placeholder="0" aria-label="緩衝百分比"> %（支出多抓一點，以防臨時開銷）</p></section>
       <section><h5>⑥ 結果</h5><div id="bgres">${resultHTML(c, b)}</div></section>
       <div class="actions"><button type="button" class="btn primary" data-bg="save"${S.bd.dirty?"":" disabled"}>儲存</button><button type="button" class="btn" data-bg="pdf">📄 匯出帳目 PDF</button>${S.bd.dirty?`<span class="who">尚未儲存</span>`:saved?`<span class="who">已儲存</span>`:""}</div>
     </div>`;
@@ -195,7 +201,9 @@
     const t = new Date(), today = `${t.getFullYear()}/${t.getMonth()+1}/${t.getDate()}`;
     const sg = v => v>=0 ? `<span class="ok">✅ ${M(v)}</span>` : `<span class="bad">⚠️ −${M(-v)}</span>`;
     const tierRows = b.tiers.map(x=>{ const n=r.rows.filter(y=>y.tier.id===x.id).length; return `<tr><td class="l">${esc(x.name||"（未命名）")}${x.staff?"（不算報名者）":""}</td><td class="r">${M(x.fee)}</td><td>${n}</td><td class="r">${M(num(x.fee)*n)}</td></tr>`; }).join("");
-    const spRows = b.sponsors.map(x=>`<tr><td class="l">贊助：${esc(x.name||"（未命名）")}</td><td></td><td></td><td class="r">${M(x.amount)}</td></tr>`).join("");
+    const spRows = b.sponsors.map(x=>x.kind==="per"
+      ? `<tr><td class="l">贊助：${esc(x.name||"（未命名）")}（每人）</td><td class="r">${M(x.amount)}</td><td>${r.N}</td><td class="r">${M(num(x.amount)*r.N)}</td></tr>`
+      : `<tr><td class="l">贊助：${esc(x.name||"（未命名）")}</td><td></td><td></td><td class="r">${M(x.amount)}</td></tr>`).join("");
     const costRows = b.costs.map(x=>{ const q=r.qty(x); return `<tr><td class="l">${esc(x.name||"（未命名）")}</td><td>${x.kind==="per"?"每人":"固定"}</td><td class="r">${M(x.amount)}</td><td>${x.kind==="per"?q:"—"}</td><td class="r">${M(num(x.amount)*q)}</td></tr>`; }).join("");
     const base = b.costs.reduce((s,x)=>s+num(x.amount)*r.qty(x),0);
     const bufAmt = base*(r.f-1);
@@ -262,6 +270,12 @@
     if(c && res){ // 只更新結果區，輸入框保持游標位置
       const focusTrial = p==="trial", pos = t.selectionStart;
       res.innerHTML = resultHTML(c, S.bd.data);
+      // 各列小計即時更新（不重畫整個區塊，游標才不會跑掉）
+      const r = calc(c, S.bd.data), box = $("#bgbox");
+      const setLast = (inp, txt) => { const cells = inp && inp.closest("tr")?.querySelectorAll("td.t"); if(cells && cells.length) cells[cells.length-1].textContent = txt; };
+      S.bd.data.tiers.forEach((it,i)=>{ const cnt=r.rows.filter(x=>x.tier.id===it.id).length; setLast(box.querySelector(`[data-bg="tiers.${i}.fee"]`), money(num(it.fee)*cnt)); });
+      S.bd.data.costs.forEach((it,i)=>{ const q=r.qty(it); setLast(box.querySelector(`[data-bg="costs.${i}.amount"]`), it.kind==="per" ? `× ${q} = ${money(num(it.amount)*q)}` : money(num(it.amount))); });
+      S.bd.data.sponsors.forEach((it,i)=>{ setLast(box.querySelector(`[data-bg="sponsors.${i}.amount"]`), it.kind==="per" ? `× ${r.N} = ${money(num(it.amount)*r.N)}` : money(num(it.amount))); });
       if(focusTrial){ const n=res.querySelector("[data-bg=trial]"); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(_){} } }
       const sv = $("#bgbox [data-bg=save]"); if(sv && p!=="trial"){ sv.disabled=false; }
     }
@@ -274,11 +288,10 @@
     if(p==="manual"){ b.manual = t.checked; if(t.checked && !Object.keys(b.paid).length){ for(const p0 of peopleFor(c)) if(!/待繳|未繳|尚未繳/.test(fieldsText(p0))) b.paid[keyOfP(p0)] = true; } }
     else if(p==="paid"){ if(t.checked) b.paid[t.dataset.k]=true; else delete b.paid[t.dataset.k]; }
     else if(p==="tierOf"){ b.tierOf[t.dataset.k] = t.value; }
-    else if(p==="guest.n"){ /* 打完人數離開欄位時，重算各項目的數量 */ }
     else if(p==="staff"){ b.tiers[+t.dataset.i].staff = t.checked; }
     else if(p==="cguest"){ b.costs[+t.dataset.i].guest = t.checked; }
     else if(p==="guest-yes" || p==="guest-no"){ b.guest = {...(b.guest||{n:0}), answer: p==="guest-yes" ? "yes" : "no"}; }
-    else if(/^costs\.\d+\.kind$/.test(p)){ setPath(b, p, t.value); }
+    else if(/^(costs|sponsors)\.\d+\.kind$/.test(p)){ setPath(b, p, t.value); }
     else return;
     S.bd.dirty = true; redraw();
   });
@@ -294,7 +307,7 @@
     }
     if(!b) return;
     if(a==="add:tiers") b.tiers.push({id:uid(), name:"", fee:0});
-    else if(a==="add:sponsors") b.sponsors.push({name:"", amount:0});
+    else if(a==="add:sponsors") b.sponsors.push({name:"", kind:"fixed", amount:0});
     else if(a==="add:costs") b.costs.push({name:"", kind:"fixed", amount:0});
     else if(a==="pdf"){ openBudgetPdf(c, b); return; }
     else if(a.startsWith("del:")){ const [list,i]=a.slice(4).split("."); b[list].splice(+i,1); }
