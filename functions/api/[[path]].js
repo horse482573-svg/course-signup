@@ -133,12 +133,15 @@ export async function onRequest({ request, env, params }) {
   try {
     // ---------- public reads ----------
     if (method === "GET" && path === "state") {
-      const [cs, ss, rs, ns] = await db.batch([
+      const [cs, ss, rs, ns, cal] = await db.batch([
         db.prepare("SELECT id, data FROM courses"),
         db.prepare("SELECT course_id, pkey, unit, division, name, title, via, at FROM signups ORDER BY at"),
         db.prepare("SELECT course_id, entries, imported_at FROM rosters"),
         db.prepare("SELECT data, updated_at FROM notice WHERE id = 'main'"),
+        db.prepare("SELECT data FROM notice WHERE id = 'cal'"),
       ]);
+      let calendars = [];
+      try { const x = cal.results[0]; if (x) calendars = JSON.parse(x.data).items || []; } catch (e) {}
       let notice = null;
       try { const n = ns.results[0]; if (n) notice = { ...JSON.parse(n.data), updatedAt: n.updated_at }; } catch (e) {}
       const url = new URL(request.url);
@@ -178,6 +181,7 @@ export async function onRequest({ request, env, params }) {
         admin,
         courses,
         notice,
+        calendars,
         signups,
         rosters,
       });
@@ -201,7 +205,7 @@ export async function onRequest({ request, env, params }) {
     // image upload is a raw body; everything else is JSON
     if (path === "admin/image") {
       const mime = (request.headers.get("content-type") || "").split(";")[0].trim();
-      if (!/^image\/(jpeg|png|webp|gif)$/.test(mime)) return J({ ok: false, error: "unsupported_type" }, 400);
+      if (!/^(image\/(jpeg|png|webp|gif)|application\/pdf)$/.test(mime)) return J({ ok: false, error: "unsupported_type" }, 400);
       const buf = await request.arrayBuffer();
       if (!buf.byteLength) return J({ ok: false, error: "empty" }, 400);
       if (buf.byteLength > 1400 * 1024) return J({ ok: false, error: "too_large" }, 413);
@@ -292,6 +296,15 @@ export async function onRequest({ request, env, params }) {
             .filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x.start)),
         };
         await db.prepare("INSERT OR REPLACE INTO notice (id, data, updated_at) VALUES ('main', ?, ?)").bind(JSON.stringify(clean), now()).run();
+        return J({ ok: true });
+      }
+      // ---------- 行事曆（大家都看得到；可放多個月份）----------
+      case "admin/calendar": {
+        const items = (Array.isArray(body.items) ? body.items : []).slice(0, 36).map(x => ({
+          month: str(x?.month, 7), img: str(x?.img, 40), pdf: str(x?.pdf, 40), name: str(x?.name, 80),
+          w: Math.max(0, Math.round(+x?.w || 0)), h: Math.max(0, Math.round(+x?.h || 0)), at: str(x?.at, 30),
+        })).filter(x => /^\d{4}-\d{2}$/.test(x.month) && x.img);
+        await db.prepare("INSERT OR REPLACE INTO notice (id, data, updated_at) VALUES ('cal', ?, ?)").bind(JSON.stringify({ items }), now()).run();
         return J({ ok: true });
       }
       case "admin/check":

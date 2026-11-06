@@ -261,6 +261,11 @@ td.aw{white-space:normal;min-width:11em;line-height:1.45}
 .bgbox input[type=text]{width:9em}
 .bg-t td,.bg-t th{padding:5px 8px;vertical-align:middle}
 .bg-t td.c{text-align:center}
+.bg-t tr.bg-inv td{border-top:0;padding-top:0;padding-bottom:10px;font-size:13.5px}
+.bg-t tr.bg-inv td>*{margin-right:12px;display:inline-flex;flex-direction:row;align-items:center;gap:4px;vertical-align:middle;color:var(--ink);font-size:13.5px;white-space:nowrap}
+.bgbox .bg-t input.bg-tax{width:7.5em}.bgbox .bg-t input.bg-ttl{width:16em;max-width:55vw}
+.bg-t tr:has(+tr.bg-inv) td{border-bottom:0}
+.bg-t .bg-tax:invalid{border-color:var(--danger);outline-color:var(--danger)}
 .bg-t .x{border:0;background:none;color:var(--muted);cursor:pointer;font-size:15px}
 .bg-res{border-collapse:collapse;min-width:min(100%,520px);margin:4px 0 8px;font-variant-numeric:tabular-nums}
 .bg-res th,.bg-res td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:right}
@@ -366,6 +371,7 @@ footer.foot{margin-top:48px;padding-top:16px;border-top:1px solid var(--line);di
 <script src="signsheet.js"></script>
 <script src="budget.js"></script>
 <script src="notice.js"></script>
+<script src="calendar.js"></script>
 <script>
 (function(){
   var bar=document.getElementById("stickyTop"), root=document.documentElement;

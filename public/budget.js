@@ -120,7 +120,12 @@
         <td><select data-bg="sponsors.${i}.kind"><option value="fixed"${s.kind!=="per"?" selected":""}>固定</option><option value="per"${s.kind==="per"?" selected":""}>每人</option></select></td>
         <td>NT$ <input type="number" min="0" step="1" inputmode="numeric" data-bg="sponsors.${i}.amount" value="${num(s.amount)||""}" placeholder="0" aria-label="金額"></td>
         <td class="t">${s.kind==="per"?`× ${r.N} = ${money(num(s.amount)*r.N)}`:money(num(s.amount))}</td>
-        <td><button type="button" class="x" data-bg="del:sponsors.${i}" aria-label="刪除">✕</button></td></tr>`).join("");
+        <td><button type="button" class="x" data-bg="del:sponsors.${i}" aria-label="刪除">✕</button></td></tr>
+      <tr class="bg-inv"><td colspan="5"><span>是否需要統編？</span>
+        <label class="check sm"><input type="radio" name="bg-inv-${i}" data-bg="inv-yes" data-i="${i}"${s.inv?" checked":""}> 需要</label>
+        <label class="check sm"><input type="radio" name="bg-inv-${i}" data-bg="inv-no" data-i="${i}"${s.inv?"":" checked"}> 不需要</label>
+        ${s.inv?`<label>統編：<input type="text" inputmode="numeric" maxlength="8" pattern="\\d{8}" data-bg="sponsors.${i}.taxId" value="${esc(s.taxId||"")}" placeholder="8 位數字" aria-label="統一編號" class="bg-tax"></label>
+        <label>抬頭：<input type="text" maxlength="60" data-bg="sponsors.${i}.invTitle" value="${esc(s.invTitle||"")}" placeholder="公司名稱" aria-label="抬頭" class="bg-ttl"></label>`:""}</td></tr>`).join("");
     const costs = b.costs.map((x,i)=>`<tr>
         <td><input type="text" data-bg="costs.${i}.name" value="${esc(x.name)}" maxlength="20" aria-label="項目"></td>
         <td><select data-bg="costs.${i}.kind"><option value="per"${x.kind==="per"?" selected":""}>每人</option><option value="fixed"${x.kind!=="per"?" selected":""}>固定</option></select></td>
@@ -204,6 +209,11 @@
     const spRows = b.sponsors.map(x=>x.kind==="per"
       ? `<tr><td class="l">贊助：${esc(x.name||"（未命名）")}（每人）</td><td class="r">${M(x.amount)}</td><td>${r.N}</td><td class="r">${M(num(x.amount)*r.N)}</td></tr>`
       : `<tr><td class="l">贊助：${esc(x.name||"（未命名）")}</td><td></td><td></td><td class="r">${M(x.amount)}</td></tr>`).join("");
+    const invs = b.sponsors.filter(x=>x.inv);
+    const invTbl = invs.length ? `<h2>贊助單位統編</h2>
+      <table><thead><tr><th>贊助單位</th><th>統一編號</th><th>抬頭（公司名稱）</th><th>金額</th></tr></thead><tbody>
+      ${invs.map(x=>`<tr><td class="l">${esc(x.name||"（未命名）")}</td><td>${esc(x.taxId||"")||`<span class="bad">未填</span>`}</td><td class="l">${esc(x.invTitle||"")}</td><td class="r">${M(x.kind==="per"?num(x.amount)*r.N:x.amount)}</td></tr>`).join("")}
+      </tbody></table>` : "";
     const costRows = b.costs.map(x=>{ const q=r.qty(x); return `<tr><td class="l">${esc(x.name||"（未命名）")}</td><td>${x.kind==="per"?"每人":"固定"}</td><td class="r">${M(x.amount)}</td><td>${x.kind==="per"?q:"—"}</td><td class="r">${M(num(x.amount)*q)}</td></tr>`; }).join("");
     const base = b.costs.reduce((s,x)=>s+num(x.amount)*r.qty(x),0);
     const bufAmt = base*(r.f-1);
@@ -229,6 +239,7 @@
       <h2>收入明細</h2>
       <table><thead><tr><th>項目</th><th>單價</th><th>人數</th><th>小計</th></tr></thead><tbody>${tierRows}${spRows}
         <tr class="tot"><td class="l">收入合計（預計）</td><td></td><td></td><td class="r">${M(r.expected + r.sponsor)}</td></tr></tbody></table>
+      ${invTbl}
       <h2>支出明細</h2>
       <table><thead><tr><th>項目</th><th>方式</th><th>單價</th><th>數量</th><th>小計</th></tr></thead><tbody>${costRows}
         ${num(b.buffer)?`<tr><td class="l">緩衝 ${num(b.buffer)}%</td><td></td><td></td><td></td><td class="r">${M(bufAmt)}</td></tr>`:""}
@@ -290,6 +301,7 @@
     else if(p==="tierOf"){ b.tierOf[t.dataset.k] = t.value; }
     else if(p==="staff"){ b.tiers[+t.dataset.i].staff = t.checked; }
     else if(p==="cguest"){ b.costs[+t.dataset.i].guest = t.checked; }
+    else if(p==="inv-yes" || p==="inv-no"){ b.sponsors[+t.dataset.i].inv = p==="inv-yes"; }
     else if(p==="guest-yes" || p==="guest-no"){ b.guest = {...(b.guest||{n:0}), answer: p==="guest-yes" ? "yes" : "no"}; }
     else if(/^(costs|sponsors)\.\d+\.kind$/.test(p)){ setPath(b, p, t.value); }
     else return;

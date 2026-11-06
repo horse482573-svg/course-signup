@@ -112,7 +112,7 @@ async function refresh(soft){
   try{
     const q = S.me ? "?"+new URLSearchParams({n:S.me.name||"", d:S.me.division||"", u:S.me.unit||""}) : "";
     const r = await api("state"+q);
-    S.courses = r.courses; S.signups = r.signups; S.rosters = r.rosters || {}; S.notice = r.notice || null;
+    S.courses = r.courses; S.signups = r.signups; S.rosters = r.rosters || {}; S.notice = r.notice || null; S.calendars = r.calendars || [];
     S.loaded = true;
     $("#sync").textContent = "最後更新 " + fmtTime(new Date().toISOString()) + " · 每 20 秒自動更新";
   }catch(e){
@@ -282,7 +282,7 @@ S.showPast = ls.get("cs-showpast")==="1";
 const pastToggle = n => n ? `<div class="past-toggle"><label class="check"><input type="checkbox" data-act="toggle-past"${S.showPast?" checked":""}> 顯示已結束的課程（${n}）</label></div>` : "";
 function shelfView(){
   const cs = sortedCourses();
-  const banner = typeof noticeBanner==="function" ? noticeBanner() : "";
+  const banner = (typeof calendarButton==="function" ? calendarButton() : "") + (typeof noticeBanner==="function" ? noticeBanner() : "");
   if(!cs.length) return banner + listView(false);
   const up = cs.filter(c=>!(c.date && c.date<today())).sort((a,b)=>((myState(a)||isSkipped(a))?1:0)-((myState(b)||isSkipped(b))?1:0));
   const past = cs.filter(c=>c.date && c.date<today());
@@ -586,7 +586,7 @@ function adminView(){
     </form></section>`
     : `<div class="actions" style="margin-bottom:16px"><button class="btn primary" data-act="new">＋ 新增課程</button><button class="btn primary" data-act="new-award">＋ 新增獎勵</button>${S.courses.length?`<button class="btn" data-act="csv-all">下載全部報名名單 CSV</button>`:""}</div>`;
 
-  return form + (typeof noticeAdmin==="function" && !S.editing ? noticeAdmin() : "") + visitsBox() + adminTable();
+  return form + (typeof noticeAdmin==="function" && !S.editing ? noticeAdmin() : "") + (typeof calendarAdmin==="function" && !S.editing ? calendarAdmin() : "") + visitsBox() + adminTable();
 }
 function courseAdminRow(c){
     const r = peopleFor(c), cap=Number(c.capacity)||0, ext=!!c.signupUrl, info=rosterInfo(c.id);
