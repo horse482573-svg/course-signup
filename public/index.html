@@ -205,7 +205,26 @@ tr.row-me td{background:var(--accent-soft);font-weight:700}
 .seg-tabs{display:flex;flex-wrap:wrap;gap:6px}
 .admin-table td{vertical-align:middle}
 .admin-table .name-cell{white-space:normal;min-width:180px;max-width:340px}
-.admin-table .ops{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;min-width:150px}
+.admin-table .ops{display:grid;grid-template-columns:repeat(2,auto);gap:6px;justify-content:start}
+.admin-table .ops .btn{justify-content:center;white-space:nowrap}
+.admin-table td{padding-top:12px;padding-bottom:12px}
+.admin-table td.ops-cell{width:1%}
+/* 可收合的區塊 */
+.fold>h2.fold-h{cursor:pointer;user-select:none;display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px}
+.fold>h2.fold-h .fold-t{display:inline-flex;align-items:center;gap:8px}
+.fold>h2.fold-h .fold-t::before{content:"▾";display:inline-block;width:1em;color:var(--muted);font-size:.85em;transition:transform .15s}
+.fold.closed>h2.fold-h .fold-t::before{transform:rotate(-90deg)}
+.fold>h2.fold-h .fold-x{font-size:13px;font-weight:400;margin-left:auto}
+.fold>h2.fold-h:hover .fold-t{color:var(--accent)}
+.fold.closed>h2.fold-h{margin-bottom:0}
+.fold.closed>:not(h2.fold-h){display:none!important}
+.bg-cmp th.cur,.bg-cmp td.cur{background:var(--accent-soft)}
+.bg-cmp td{text-align:right;font-variant-numeric:tabular-nums}
+.bgbox input.bg-n{width:5em}.bgbox input.bg-q{width:5em;margin-left:6px}
+.bgbox select.bg-prize{width:auto;max-width:10em}
+.bgbox td.qty{white-space:nowrap}
+.bg-cmp td:first-child{text-align:left}
+#trialPanel{margin-bottom:16px;scroll-margin-top:calc(var(--stick-h,150px) + 12px)}
 @media (min-width:1000px){body.tab-admin .wrap{max-width:1240px}}
 .admin-table td.t{white-space:nowrap}
 .admin-table tr.row-open td{background:var(--accent-soft)}

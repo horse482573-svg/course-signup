@@ -545,9 +545,11 @@ function awardAdminRow(a){
       ${(S.prev||{})[a.id]?`<button class="btn" data-act="roster-undo" data-id="${esc(a.id)}" title="匯入前自動保存的名單">↩ 復原上一版（${fmtTime(S.prev[a.id].importedAt)||"—"}，${S.prev[a.id].n} 人）</button>`:""}
       <button class="btn" data-act="edit" data-id="${esc(a.id)}">編輯</button>
       ${list.length?`<button class="btn" data-act="signsheet" data-id="${esc(a.id)}">簽到表</button><button class="btn" data-act="csv" data-id="${esc(a.id)}">下載名單 CSV</button>`:""}
+      <button class="btn${S.budgetOpen===a.id?" primary":""}" data-act="budget" data-id="${esc(a.id)}" aria-expanded="${S.budgetOpen===a.id}">💰 預算</button>
       <button class="btn link" data-act="goto-award" data-id="${esc(a.id)}">查看同事看到的畫面</button>
       <button class="btn danger" data-act="del" data-id="${esc(a.id)}">刪除</button>
     </div>${del}
+    ${S.budgetOpen===a.id && typeof budgetSection==="function" ? budgetSection(a) : ""}
   </section>`;
 }
 function adminView(){
@@ -584,9 +586,13 @@ function adminView(){
         <button type="submit" class="btn primary" ${S.busy?"disabled":""}>${e==="new"?"發布課程":"儲存變更"}</button>
       </div>
     </form></section>`
-    : `<div class="actions" style="margin-bottom:16px"><button class="btn primary" data-act="new">＋ 新增課程</button><button class="btn primary" data-act="new-award">＋ 新增獎勵</button>${S.courses.length?`<button class="btn" data-act="csv-all">下載全部報名名單 CSV</button>`:""}</div>`;
+    : `<div class="actions" style="margin-bottom:16px"><button class="btn primary" data-act="new">＋ 新增課程</button><button class="btn primary" data-act="new-award">＋ 新增獎勵</button><button class="btn${S.trialOpen?" primary":""}" data-act="trial" aria-expanded="${!!S.trialOpen}">🧮 預算試算</button>${S.courses.length?`<button class="btn" data-act="csv-all">下載全部報名名單 CSV</button>`:""}</div>`;
 
-  return form + (typeof noticeAdmin==="function" && !S.editing ? noticeAdmin() : "") + (typeof calendarAdmin==="function" && !S.editing ? calendarAdmin() : "") + visitsBox() + adminTable();
+  const trial = !S.editing && S.trialOpen && typeof budgetSection==="function" ? `<div id="trialPanel">${budgetSection(trialCourse)}</div>` : "";
+  return form + trial + adminTable()
+    + (typeof noticeAdmin==="function" && !S.editing ? fold("notice", noticeAdmin()) : "")
+    + (typeof calendarAdmin==="function" && !S.editing ? fold("cal", calendarAdmin()) : "")
+    + fold("visits", visitsBox());
 }
 function courseAdminRow(c){
     const r = peopleFor(c), cap=Number(c.capacity)||0, ext=!!c.signupUrl, info=rosterInfo(c.id);
@@ -626,41 +632,55 @@ function adminStatus(c){
   if(c.status==="closed") return {label:"報名截止", cls:"closed"};
   return {label:"開放中", cls:"mine"};
 }
+/* 管理頁各區可收合（記在這台裝置） */
+const FOLD_DEFAULT = { notice:true, cal:true, visits:true, courses:false, awards:false };   // true＝預設收合
+function foldClosed(k){ try{ const m = JSON.parse(localStorage.getItem("cs-fold")||"{}"); if(k in m) return !!m[k]; }catch(e){} return !!FOLD_DEFAULT[k]; }
+function setFold(k, closed){ try{ const m = JSON.parse(localStorage.getItem("cs-fold")||"{}"); m[k]=closed; localStorage.setItem("cs-fold", JSON.stringify(m)); }catch(e){} }
+function fold(k, html, extra){
+  if(!html) return "";
+  const closed = foldClosed(k);
+  return html.replace(/<section class="panel/, `<section data-fold="${k}" class="fold${closed?" closed":""} panel`)
+    .replace(/<h2([^>]*)>([\s\S]*?)<\/h2>/, (m,a,t)=>`<h2${a} class="fold-h" data-act="fold" data-k="${k}" role="button" tabindex="0" aria-expanded="${!closed}"><span class="fold-t">${t}</span>${extra?`<span class="fold-x">${extra}</span>`:""}</h2>`);
+}
 function adminTable(){
   const all = [...sortedCourses(), ...sortedAwards()];
   if(!all.length) return S.editing ? "" : `<div class="empty"><strong>還沒有課程</strong>按「新增課程」建立第一堂，發布後同事立刻看得到。</div>`;
-  const f = S.adminFilter || "active";
-  const shown = all.filter(c=>{
-    const ended = isAward(c) ? awardStatus(c).key==="ended" : (c.date && c.date < today());
-    return f==="all" ? true : f==="ended" ? ended : !ended;
-  });
-  const kind = c => (isAward(c) ? `<span class="pill closed">獎勵</span>` : isMeal(c) ? `<span class="pill closed">附餐點</span>` : `<span class="who">一般</span>`) + (c.hot&&!isAward(c)?` <span class="pill hot">最火</span>`:"");
-  const cnt = (c,k) => ([...sortedCourses(), ...sortedAwards()].filter(x=>{ const e=isAward(x)?awardStatus(x).key==="ended":(x.date&&x.date<today()); return k==="all"?true:k==="ended"?e:!e; }).length);
+  const open = S.adminOpen && all.find(x=>x.id===S.adminOpen);
+  const detail = `<div id="adminDetail">${open ? (isAward(open) ? awardAdminRow(open) : courseAdminRow(open)) : ""}</div>`;
+  const cs = adminList("courses", sortedCourses()), as = adminList("awards", sortedAwards());
+  return cs + (open && !isAward(open) ? detail : "") + as + (open && isAward(open) ? detail : "")
+    + (open ? "" : `<p class="hint" style="text-align:center">點表格中的「管理」或名稱，可以查看名單、匯入名單、下載 CSV、截止或刪除。</p>`);
+}
+function adminList(k, list){
+  const aw = k==="awards";
+  const endedOf = c => aw ? awardStatus(c).key==="ended" : !!(c.date && c.date < today());
+  S.adminFilters = S.adminFilters || {};
+  const f = S.adminFilters[k] || "active";
+  const cnt = key => list.filter(x=>key==="all"?true:key==="ended"?endedOf(x):!endedOf(x)).length;
+  const shown = list.filter(c=>f==="all" ? true : f==="ended" ? endedOf(c) : !endedOf(c));
+  const kind = c => (isMeal(c) ? `<span class="pill closed">附餐點</span>` : `<span class="who">一般</span>`) + (c.hot?` <span class="pill hot">最火</span>`:"");
+  const sd = d => d ? d.replace(/^(\d{4})-0?(\d+)-0?(\d+)$/, (m,y,mo,da)=>`${y!==String(new Date().getFullYear())?y+"/":""}${mo}/${da}`) : "";
   const rowsHTML = shown.map(c=>{
-    const n = isAward(c) ? officialFor(c.id).length : peopleFor(c).length;
+    const n = aw ? officialFor(c.id).length : peopleFor(c).length;
     const info = rosterInfo(c.id), st = adminStatus(c), open = S.adminOpen===c.id;
-    const sd = d => d ? d.replace(/^(\d{4})-0?(\d+)-0?(\d+)$/, (m,y,mo,da)=>`${y!==String(new Date().getFullYear())?y+"/":""}${mo}/${da}`) : "";
-    const when = isAward(c) ? `${sd(c.date)||"—"}<br><span class="who">至 ${sd(c.endDate)||"—"}</span>` : (sd(c.date)||"待定");
+    const when = aw ? `${sd(c.date)||"—"}<br><span class="who">至 ${sd(c.endDate)||"—"}</span>` : (sd(c.date)||"待定");
+    const bOn = open && S.budgetOpen===c.id;
     return `<tr class="${open?"row-open":""}">
+      <td class="ops-cell"><div class="ops"><button type="button" class="btn ${open?"":"primary "}sm" data-act="admin-open" data-id="${esc(c.id)}">${open?"收合":"管理"}</button><button type="button" class="btn sm" data-act="edit" data-id="${esc(c.id)}">編輯</button><button type="button" class="btn sm${bOn?" primary":""}" data-act="budget-row" data-id="${esc(c.id)}">💰 預算</button>${aw?"":`<button type="button" class="btn sm ${c.hot?"hot-on":""}" data-act="toggle-hot" data-id="${esc(c.id)}" title="${c.hot?"取消近期最火":"設為近期最火"}">${c.hot?"取消最火":"設為最火"}</button>`}</div></td>
       <td class="t">${when}</td>
       <td class="name-cell"><button type="button" class="linkish" data-act="admin-open" data-id="${esc(c.id)}">${esc(c.title)}</button></td>
-      <td>${kind(c)}</td>
+      ${aw?"":`<td>${kind(c)}</td>`}
       <td><span class="pill ${st.cls}">${st.label}</span></td>
       <td class="t">${n} 人</td>
       <td class="t">${info?fmtTime(info.importedAt):"—"}</td>
-      <td class="t">${!isAward(c) && typeof budgetBadge==="function" ? budgetBadge(c) : ""}</td>
-      <td><div class="ops"><button type="button" class="btn ${open?"":"primary "}sm" data-act="admin-open" data-id="${esc(c.id)}">${open?"收合":"管理"}</button><button type="button" class="btn sm" data-act="edit" data-id="${esc(c.id)}">編輯</button>${isAward(c)?"":`<button type="button" class="btn sm ${c.hot?"hot-on":""}" data-act="toggle-hot" data-id="${esc(c.id)}" title="${c.hot?"取消近期最火":"設為近期最火"}">${c.hot?"取消最火":"設為最火"}</button>`}</div></td>
+      <td class="t">${typeof budgetBadge==="function" ? budgetBadge(c) : ""}</td>
     </tr>`;
   }).join("");
-  const open = S.adminOpen && all.find(x=>x.id===S.adminOpen);
-  return `<section class="panel admin-list">
-      <div class="title-row" style="justify-content:space-between;margin-bottom:10px">
-        <h2 style="margin:0">課程與獎勵總表</h2>
-        <div class="seg seg-tabs">${[["active","進行中／即將開始"],["ended","已結束"],["all","全部"]].map(([k,l])=>`<button type="button" class="btn sm ${f===k?"primary":""}" data-act="admin-filter" data-k="${k}">${l} ${cnt(null,k)}</button>`).join("")}</div>
-      </div>
-      ${shown.length?`<div class="tbl"><table class="admin-table"><thead><tr><th>日期</th><th>名稱</th><th>類型</th><th>狀態</th><th>人數</th><th>名單更新</th><th>預算</th><th></th></tr></thead><tbody>${rowsHTML}</tbody></table></div>`:`<p class="who" style="margin:0">這個分類目前沒有項目。</p>`}
-    </section>
-    <div id="adminDetail">${open ? (isAward(open) ? awardAdminRow(open) : courseAdminRow(open)) : `<p class="hint" style="text-align:center">點表格中的「管理」或名稱，可以查看名單、匯入名單、下載 CSV、截止或刪除。</p>`}</div>`;
+  const title = aw ? "🏆 獎勵總表" : "📚 課程總表";
+  return fold(k, `<section class="panel admin-list"><h2>${title}</h2>
+      <div class="seg seg-tabs" style="margin-bottom:10px">${[["active","進行中／即將開始"],["ended","已結束"],["all","全部"]].map(([kk,l])=>`<button type="button" class="btn sm ${f===kk?"primary":""}" data-act="admin-filter" data-g="${k}" data-k="${kk}">${l} ${cnt(kk)}</button>`).join("")}</div>
+      ${shown.length?`<div class="tbl"><table class="admin-table"><thead><tr><th>操作</th><th>${aw?"期間":"日期"}</th><th>名稱</th>${aw?"":"<th>類型</th>"}<th>狀態</th><th>${aw?"得獎":"人數"}</th><th>名單更新</th><th>預算</th></tr></thead><tbody>${rowsHTML}</tbody></table></div>`:`<p class="who" style="margin:0">這個分類目前沒有項目。</p>`}
+    </section>`, `<span class="who">${cnt("active")} 個進行中・共 ${list.length}</span>`);
 }
 
 /* 圖片上傳 */
@@ -897,7 +917,7 @@ document.addEventListener("click", async ev=>{
   const b = ev.target.closest("[data-act]"); if(!b) return;
   const id=b.dataset.id, act=b.dataset.act;
   if(act==="goto") gotoCourse(id);
-  else if(act==="budget"){ if(S.budgetOpen===id && S.bd && S.bd.dirty && !confirm("預算還沒儲存，確定要收起嗎？")) return; S.budgetOpen = S.budgetOpen===id ? null : id; S.bd = null; render(true); if(S.budgetOpen) setTimeout(()=>$("#bgbox")?.scrollIntoView({behavior:"smooth",block:"start"}),0); }
+  else if(act==="budget"){ if(S.budgetOpen===id && S.bd && S.bd.dirty && !confirm("預算還沒儲存，確定要收起嗎？")) return; S.budgetOpen = S.budgetOpen===id ? null : id; S.bd = null; if(S.budgetOpen) S.trialOpen = false; render(true); if(S.budgetOpen) setTimeout(()=>$("#bgbox")?.scrollIntoView({behavior:"smooth",block:"start"}),0); }
   else if(act==="signsheet") openSignSheet(id);
   else if(act==="roster-undo"){
     const pv=(S.prev||{})[id]; if(!pv) return;
@@ -921,7 +941,19 @@ document.addEventListener("click", async ev=>{
   else if(act==="award-back"){ S.awardOpen=null; try{ history.replaceState(null,"","#awards"); }catch(e){} render(); window.scrollTo({top:0}); }
   else if(act==="admin-open"){ S.adminOpen = S.adminOpen===id ? null : id; if(S.importing && S.importing!==S.adminOpen) closeImport(); S.confirmDel=null; render(); if(S.adminOpen) setTimeout(()=>$("#adminDetail")?.scrollIntoView({behavior:"smooth",block:"start"}),0); }
   else if(act==="toggle-hot"){ const c=S.courses.find(x=>x.id===id); if(c){ try{ await api("admin/course",{course:{...c, hot:!c.hot}}); toast(c.hot?"已取消「近期最火」":"已設為「近期最火」"); }catch(e){ toast(errMsg(e)); } await refresh(); } }
-  else if(act==="admin-filter"){ S.adminFilter=b.dataset.k; render(); }
+  else if(act==="admin-filter"){ S.adminFilters = S.adminFilters||{}; S.adminFilters[b.dataset.g||"courses"]=b.dataset.k; render(); }
+  else if(act==="fold"){ const sec=b.closest("[data-fold]"); const closed=!sec.classList.contains("closed"); sec.classList.toggle("closed", closed); b.setAttribute("aria-expanded", String(!closed)); setFold(b.dataset.k, closed); }
+  else if(act==="budget-row"){
+    if(S.bd && S.bd.dirty && S.bd.id!=="__trial" && S.bd.id!==id && !confirm("預算還沒儲存，確定要離開嗎？")) return;
+    const same = S.adminOpen===id && S.budgetOpen===id;
+    S.adminOpen = id; S.budgetOpen = same ? null : id; S.bd = null; if(!same) S.trialOpen = false; if(S.importing && S.importing!==id) closeImport(); S.confirmDel=null; render(true);
+    if(!same) setTimeout(()=>$("#bgbox")?.scrollIntoView({behavior:"smooth",block:"start"}),0);
+  }
+  else if(act==="trial"){
+    S.trialOpen = !S.trialOpen; if(S.bd && S.bd.id==="__trial") S.bd = null;
+    if(S.trialOpen && S.budgetOpen){ if(S.bd && S.bd.dirty && !confirm("課程預算還沒儲存，確定要離開嗎？")){ S.trialOpen=false; return; } S.budgetOpen = null; S.bd = null; }
+    render(true); if(S.trialOpen) setTimeout(()=>$("#trialPanel")?.scrollIntoView({behavior:"smooth",block:"start"}),0);
+  }
   else if(act==="new"){ startEdit("new"); render(); setTimeout(()=>$("#f-title")?.focus(),0); }
   else if(act==="edit"){ startEdit(id); render(); window.scrollTo({top:0,behavior:"smooth"}); }
   else if(act==="cancel-edit"){ dropImages(S.uploaded); S.uploaded=[]; S.editing=null; render(); }
@@ -1003,6 +1035,7 @@ document.addEventListener("change", ev=>{
   }
 });
 document.addEventListener("keydown", ev=>{ if(ev.key==="Escape" && !$("#lightbox").hidden) $("#lightbox").hidden=true; });
+document.addEventListener("keydown", ev=>{ const h=ev.target.closest && ev.target.closest("h2.fold-h"); if(h && (ev.key==="Enter"||ev.key===" ")){ ev.preventDefault(); h.click(); } });
 document.addEventListener("submit", async ev=>{
   ev.preventDefault();
   const f = ev.target;
