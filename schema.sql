@@ -30,3 +30,9 @@ CREATE TABLE IF NOT EXISTS notice (
 
 CREATE TABLE IF NOT EXISTS images (id TEXT PRIMARY KEY, mime TEXT NOT NULL, body BLOB NOT NULL, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_signups_pkey ON signups(pkey);
+
+-- 管理人員（訓育委員 trainer／經管委員 manager）；登入碼只存雜湊
+CREATE TABLE IF NOT EXISTS staff (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL, code_hash TEXT NOT NULL UNIQUE, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, last_login TEXT);
+-- 操作紀錄
+CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, course_id TEXT NOT NULL, who TEXT, action TEXT, detail TEXT);
+CREATE INDEX IF NOT EXISTS logs_course ON logs (course_id, id);

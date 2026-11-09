@@ -63,10 +63,17 @@ async function api(path, body, opts={}){
 const MSG = {
   onsite_closed:"本站報名暫停中，報名方式請洽課程舉辦人", network:"連線失敗，請檢查網路後再試一次", full:"這堂課已額滿", closed:"這堂課已截止報名",
   bad_input:"資料不完整，請檢查後再試", not_found:"找不到這堂課，可能已被刪除",
-  bad_key:"管理密碼不對，請重新登入", no_password:"網站還沒設定管理密碼（ADMIN_PASSWORD）",
+  bad_key:"管理密碼或登入碼不對（可能已被停用），請重新登入", forbidden:"你的權限不能做這個操作", no_password:"網站還沒設定管理密碼（ADMIN_PASSWORD）",
   too_large:"圖片太大，請換一張小一點的圖片", unsupported_type:"不支援這種圖片格式，請用 JPG 或 PNG",
 };
 const errMsg = e => MSG[e && e.error] || "操作沒有成功，請稍後再試";
+/* 管理權限：owner 總管理員、trainer 訓育委員（全部課程獎勵＋公告＋行事曆）、manager 經管委員（只管自己設立的） */
+const ROLE_LABEL = { owner:"總管理員", trainer:"訓育委員", manager:"經管委員" };
+const isTop = () => S.isOwner && S.role==="owner";
+const canAll = () => S.isOwner && (S.role==="owner" || S.role==="trainer");
+const canEdit = c => canAll() || (S.isOwner && S.role==="manager" && !!c && c.owner===S.adminId);
+function setWho(r){ S.role = r.role||""; S.adminId = r.id||""; S.adminName = r.name||""; S.staffList = r.staff||[]; }
+const makerName = () => S.adminName || (S.me && S.me.name) || "";
 
 /* 瀏覽統計：每次開啟網頁記一次（課程舉辦人自己不計） */
 function logVisit(){
@@ -81,7 +88,7 @@ async function loadPrev(){
 }
 async function loadVisits(){
   if(!S.isOwner) return;
-  try{ S.visits = (await api("admin/visits",{})).days; }catch(e){}
+  if(isTop()){ try{ S.visits = (await api("admin/visits",{})).days; }catch(e){} }
   try{ S.budgets = (await api("admin/budgets",{})).budgets || {}; }catch(e){}
   await loadPrev();
 }
@@ -108,7 +115,7 @@ function visitsBox(){
   </section>`;
 }
 async function refresh(soft){
-  const typing = soft && document.activeElement && document.activeElement.closest && document.activeElement.closest("#bgbox, #ss, #ntadmin");
+  const typing = soft && document.activeElement && document.activeElement.closest && document.activeElement.closest("#bgbox, #ss, #ntadmin, #stadmin, .own-log");
   try{
     const q = S.me ? "?"+new URLSearchParams({n:S.me.name||"", d:S.me.division||"", u:S.me.unit||""}) : "";
     const r = await api("state"+q);
@@ -243,8 +250,8 @@ function render(soft){
 }
 function renderWho(){
   $("#who").innerHTML = S.me
-    ? `目前身分：<b>${esc(S.me.name)}</b> · ${esc(subline(S.me))}${S.isOwner?" · 課程舉辦人":""} <button class="btn link" data-act="edit-profile" style="padding:0 0 0 6px;font-size:13px">修改</button>`
-    : `<button class="btn link" data-act="edit-profile" style="padding:0;font-size:13px">填寫我的報名資料</button>${S.isOwner?" · 課程舉辦人":""}`;
+    ? `目前身分：<b>${esc(S.me.name)}</b> · ${esc(subline(S.me))}${S.isOwner?` · ${esc(S.adminName||"")}（${ROLE_LABEL[S.role]||"課程舉辦人"}）`:""} <button class="btn link" data-act="edit-profile" style="padding:0 0 0 6px;font-size:13px">修改</button>`
+    : `<button class="btn link" data-act="edit-profile" style="padding:0;font-size:13px">填寫我的報名資料</button>${S.isOwner?` · ${esc(S.adminName||"")}（${ROLE_LABEL[S.role]||"課程舉辦人"}）`:""}`;
 }
 
 /* 課程總覽（書架） */
@@ -505,7 +512,7 @@ function listView(onlyMine){
 /* ---------- 舉辦人 ---------- */
 function loginView(){
   return `<section class="panel"><h2>舉辦人登入</h2>
-    <form id="loginForm"><label>管理密碼<input id="l-key" type="password" autocomplete="current-password"></label>
+    <form id="loginForm"><label>管理密碼或登入碼<input id="l-key" type="password" autocomplete="current-password" placeholder="例如 abcd-efgh-jk"></label>
     <div class="form-foot"><span class="err" id="lErr"></span><button type="button" class="btn link" data-act="login-cancel">取消</button><button type="submit" class="btn primary">登入</button></div></form></section>`;
 }
 function awardForm(c, e){
@@ -549,6 +556,7 @@ function awardAdminRow(a){
       <button class="btn link" data-act="goto-award" data-id="${esc(a.id)}">查看同事看到的畫面</button>
       <button class="btn danger" data-act="del" data-id="${esc(a.id)}">刪除</button>
     </div>${del}
+    ${ownerLog(a)}
     ${S.budgetOpen===a.id && typeof budgetSection==="function" ? budgetSection(a) : ""}
   </section>`;
 }
@@ -586,14 +594,33 @@ function adminView(){
         <button type="submit" class="btn primary" ${S.busy?"disabled":""}>${e==="new"?"發布課程":"儲存變更"}</button>
       </div>
     </form></section>`
-    : `<div class="actions" style="margin-bottom:16px"><button class="btn primary" data-act="new">＋ 新增課程</button><button class="btn primary" data-act="new-award">＋ 新增獎勵</button><button class="btn${S.trialOpen?" primary":""}" data-act="trial" aria-expanded="${!!S.trialOpen}">🧮 預算試算</button>${S.courses.length?`<button class="btn" data-act="csv-all">下載全部報名名單 CSV</button>`:""}</div>`;
+    : `<div class="actions" style="margin-bottom:16px"><button class="btn primary" data-act="new">＋ 新增課程</button><button class="btn primary" data-act="new-award">＋ 新增獎勵</button><button class="btn${S.trialOpen?" primary":""}" data-act="trial" aria-expanded="${!!S.trialOpen}">🧮 預算試算</button>${S.courses.length&&canAll()?`<button class="btn" data-act="csv-all">下載全部報名名單 CSV</button>`:""}</div>`;
 
   const trial = !S.editing && S.trialOpen && typeof budgetSection==="function" ? `<div id="trialPanel">${budgetSection(trialCourse)}</div>` : "";
   return form + trial + adminTable()
-    + (typeof noticeAdmin==="function" && !S.editing ? fold("notice", noticeAdmin()) : "")
-    + (typeof calendarAdmin==="function" && !S.editing ? fold("cal", calendarAdmin()) : "")
-    + fold("visits", visitsBox());
+    + (canAll() && typeof noticeAdmin==="function" && !S.editing ? fold("notice", noticeAdmin()) : "")
+    + (canAll() && typeof calendarAdmin==="function" && !S.editing ? fold("cal", calendarAdmin()) : "")
+    + (isTop() && typeof staffAdmin==="function" && !S.editing ? fold("staff", staffAdmin()) : "")
+    + (isTop() ? fold("visits", visitsBox()) : "");
 }
+/* 負責人＋操作紀錄（課程、獎勵管理區最下方） */
+function ownerLog(c){
+  S.logs = S.logs || {}; S.logOpen = S.logOpen || {};
+  const staff = (S.staffList||[]).filter(x=>x.active || x.id===c.owner);
+  const sel = canAll() ? `<select data-owner="${esc(c.id)}" aria-label="負責人"><option value=""${!c.owner?" selected":""}>總管理員</option>${staff.map(x=>`<option value="${esc(x.id)}"${x.id===c.owner?" selected":""}>${esc(x.name)}（${ROLE_LABEL[x.role]||""}）${x.active?"":"・已停用"}</option>`).join("")}</select>` : `<b>${esc(c.ownerName||"總管理員")}</b>`;
+  const L = S.logs[c.id];
+  const body = !L ? `<p class="who">載入中…</p>` : !L.length ? `<p class="who">還沒有紀錄（這個功能上線後的操作才會記錄）。</p>`
+    : `<div class="tbl"><table class="log-t"><tbody>${L.map(x=>`<tr><td class="t">${esc(fmtTime(x.at))}</td><td>${esc(x.who||"—")}</td><td>${esc(x.action)}${x.detail?`<span class="who">　${esc(x.detail)}</span>`:""}</td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="own-log"><label class="own">負責人：${sel}</label>
+    <details data-log="${esc(c.id)}"${S.logOpen[c.id]?" open":""}><summary>📝 操作紀錄</summary>${body}</details></div>`;
+}
+async function loadLogs(id){ try{ S.logs[id] = (await api("admin/logs",{courseId:id})).logs || []; }catch(e){ S.logs[id] = []; } const d=document.querySelector(`details[data-log="${CSS.escape(id)}"]`); if(d){ const c=S.courses.find(x=>x.id===id); if(c) d.parentElement.outerHTML = ownerLog(c); } }
+document.addEventListener("toggle", e=>{ const d=e.target; if(!d.matches || !d.matches("details[data-log]")) return; const id=d.dataset.log; S.logOpen=S.logOpen||{}; S.logOpen[id]=d.open; if(d.open) loadLogs(id); }, true);
+document.addEventListener("change", async e=>{
+  const t=e.target; if(!t.dataset || t.dataset.owner==null) return;
+  try{ await api("admin/course/owner",{id:t.dataset.owner, owner:t.value}); toast("已變更負責人"); if(S.logs) delete S.logs[t.dataset.owner]; }catch(err){ toast(errMsg(err)); }
+  await refresh();
+});
 function courseAdminRow(c){
     const r = peopleFor(c), cap=Number(c.capacity)||0, ext=!!c.signupUrl, info=rosterInfo(c.id);
     const nPend = r.filter(p=>!p.confirmed).length;
@@ -623,6 +650,7 @@ function courseAdminRow(c){
         ${r.length?`<button class="btn" data-act="signsheet" data-id="${esc(c.id)}">簽到表</button><button class="btn" data-act="csv" data-id="${esc(c.id)}">下載名單 CSV</button>`:""}
         <button class="btn danger" data-act="del" data-id="${esc(c.id)}">刪除</button>
       </div>${del}
+      ${ownerLog(c)}
       ${S.budgetOpen===c.id && typeof budgetSection==="function" ? budgetSection(c) : ""}
     </section>`;
 }
@@ -633,7 +661,7 @@ function adminStatus(c){
   return {label:"開放中", cls:"mine"};
 }
 /* 管理頁各區可收合（記在這台裝置） */
-const FOLD_DEFAULT = { notice:true, cal:true, visits:true, courses:false, awards:false };   // true＝預設收合
+const FOLD_DEFAULT = { notice:true, cal:true, staff:true, visits:true, courses:false, awards:false };   // true＝預設收合
 function foldClosed(k){ try{ const m = JSON.parse(localStorage.getItem("cs-fold")||"{}"); if(k in m) return !!m[k]; }catch(e){} return !!FOLD_DEFAULT[k]; }
 function setFold(k, closed){ try{ const m = JSON.parse(localStorage.getItem("cs-fold")||"{}"); m[k]=closed; localStorage.setItem("cs-fold", JSON.stringify(m)); }catch(e){} }
 function fold(k, html, extra){
@@ -643,11 +671,11 @@ function fold(k, html, extra){
     .replace(/<h2([^>]*)>([\s\S]*?)<\/h2>/, (m,a,t)=>`<h2${a} class="fold-h" data-act="fold" data-k="${k}" role="button" tabindex="0" aria-expanded="${!closed}"><span class="fold-t">${t}</span>${extra?`<span class="fold-x">${extra}</span>`:""}</h2>`);
 }
 function adminTable(){
-  const all = [...sortedCourses(), ...sortedAwards()];
-  if(!all.length) return S.editing ? "" : `<div class="empty"><strong>還沒有課程</strong>按「新增課程」建立第一堂，發布後同事立刻看得到。</div>`;
+  const all = [...sortedCourses(), ...sortedAwards()].filter(canEdit);
+  if(!all.length) return S.editing ? "" : `<div class="empty"><strong>${canAll()?"還沒有課程":"你還沒有設立課程或獎勵"}</strong>按「新增課程」${canAll()?"建立第一堂，發布後同事立刻看得到。":"或「新增獎勵」建立，之後就能在這裡管理名單、預算和簽到表。"}</div>`;
   const open = S.adminOpen && all.find(x=>x.id===S.adminOpen);
   const detail = `<div id="adminDetail">${open ? (isAward(open) ? awardAdminRow(open) : courseAdminRow(open)) : ""}</div>`;
-  const cs = adminList("courses", sortedCourses()), as = adminList("awards", sortedAwards());
+  const cs = adminList("courses", sortedCourses().filter(canEdit)), as = adminList("awards", sortedAwards().filter(canEdit));
   return cs + (open && !isAward(open) ? detail : "") + as + (open && isAward(open) ? detail : "")
     + (open ? "" : `<p class="hint" style="text-align:center">點表格中的「管理」或名稱，可以查看名單、匯入名單、下載 CSV、截止或刪除。</p>`);
 }
@@ -666,9 +694,9 @@ function adminList(k, list){
     const when = aw ? `${sd(c.date)||"—"}<br><span class="who">至 ${sd(c.endDate)||"—"}</span>` : (sd(c.date)||"待定");
     const bOn = open && S.budgetOpen===c.id;
     return `<tr class="${open?"row-open":""}">
-      <td class="ops-cell"><div class="ops"><button type="button" class="btn ${open?"":"primary "}sm" data-act="admin-open" data-id="${esc(c.id)}">${open?"收合":"管理"}</button><button type="button" class="btn sm" data-act="edit" data-id="${esc(c.id)}">編輯</button><button type="button" class="btn sm${bOn?" primary":""}" data-act="budget-row" data-id="${esc(c.id)}">💰 預算</button>${aw?"":`<button type="button" class="btn sm ${c.hot?"hot-on":""}" data-act="toggle-hot" data-id="${esc(c.id)}" title="${c.hot?"取消近期最火":"設為近期最火"}">${c.hot?"取消最火":"設為最火"}</button>`}</div></td>
+      <td class="ops-cell"><div class="ops"><button type="button" class="btn ${open?"":"primary "}sm" data-act="admin-open" data-id="${esc(c.id)}">${open?"收合":"管理"}</button><button type="button" class="btn sm" data-act="edit" data-id="${esc(c.id)}">編輯</button><button type="button" class="btn sm${bOn?" primary":""}" data-act="budget-row" data-id="${esc(c.id)}">💰 預算</button>${aw||!canAll()?"":`<button type="button" class="btn sm ${c.hot?"hot-on":""}" data-act="toggle-hot" data-id="${esc(c.id)}" title="${c.hot?"取消近期最火":"設為近期最火"}">${c.hot?"取消最火":"設為最火"}</button>`}</div></td>
       <td class="t">${when}</td>
-      <td class="name-cell"><button type="button" class="linkish" data-act="admin-open" data-id="${esc(c.id)}">${esc(c.title)}</button></td>
+      <td class="name-cell"><button type="button" class="linkish" data-act="admin-open" data-id="${esc(c.id)}">${esc(c.title)}</button>${canAll()&&c.ownerName?`<div class="who" style="font-size:12px">負責：${esc(c.ownerName)}</div>`:""}</td>
       ${aw?"":`<td>${kind(c)}</td>`}
       <td><span class="pill ${st.cls}">${st.label}</span></td>
       <td class="t">${n} 人</td>
@@ -909,7 +937,7 @@ function csv(courses){
 }
 function closeImport(){ S.importing=null; S.impRows=null; S.impText=""; S.impMode="replace"; S.impLabels=null; }
 const impLabels = c => ({meal:(S.impLabels&&S.impLabels.meal)||mealL(c), drink:(S.impLabels&&S.impLabels.drink)||drinkL(c)});
-function adminLogout(){ S.adminKey=""; ss.del("cs-admin"); S.isOwner=false; S.editing=null; closeImport(); if(S.tab==="admin") S.tab="shelf"; render(); refresh(true); }
+function adminLogout(){ S.adminKey=""; ss.del("cs-admin"); S.isOwner=false; setWho({}); S.visits=null; S.budgets={}; S.prev={}; S.editing=null; closeImport(); if(S.tab==="admin") S.tab="shelf"; render(); refresh(true); }
 
 document.addEventListener("click", async ev=>{
   const tab = ev.target.closest("nav.tabs button");
@@ -1009,10 +1037,10 @@ document.addEventListener("click", async ev=>{
     }
     S.impBusy=true; render();
     try{
-      await api("admin/roster",{courseId:id, entries});
+      await api("admin/roster",{courseId:id, entries, mode:rosterInfo(id)?S.impMode:""});
       if(isMeal(c) && S.impLabels && (S.impLabels.meal||S.impLabels.drink)){
         const l = impLabels(c);
-        if(l.meal!==mealL(c) || l.drink!==drinkL(c)) await api("admin/course",{course:{...c, mealLabel:l.meal, drinkLabel:l.drink}});
+        if(l.meal!==mealL(c) || l.drink!==drinkL(c)) await api("admin/course",{course:{...c, mealLabel:l.meal, drinkLabel:l.drink}, what:"-"});
       }
       const hit = rosterFor(id).filter(p=>entries.some(o=>sameP(p,o))).length;
       toast(`已匯入 ${entries.length} 人，與自行回報相符 ${hit} 人`); closeImport();
@@ -1042,8 +1070,8 @@ document.addEventListener("submit", async ev=>{
   if(f.id==="courseForm") return saveCourse();
   if(f.id==="loginForm"){
     const key = $("#l-key").value;
-    try{ await api("admin/check",{}, {key}); S.adminKey=key; ss.set("cs-admin",key); S.isOwner=true; S.loginOpen=false; S.tab="admin"; render(); toast("已登入課程管理"); await loadVisits(); await refresh(); }
-    catch(e){ $("#lErr").textContent = e.error==="bad_key" ? "密碼不對" : errMsg(e); }
+    try{ const r = await api("admin/check",{}, {key}); setWho(r); S.adminKey=key; ss.set("cs-admin",key); S.isOwner=true; S.loginOpen=false; S.tab="admin"; render(); toast("已登入課程管理"); await loadVisits(); await refresh(); }
+    catch(e){ $("#lErr").textContent = e.error==="bad_key" ? "密碼或登入碼不對，或已被停用" : errMsg(e); }
     return;
   }
   if(f.id==="profileForm"){
@@ -1064,7 +1092,7 @@ document.addEventListener("submit", async ev=>{
 /* ---------- 啟動 ---------- */
 (async()=>{
   render();
-  if(S.adminKey){ try{ await api("admin/check",{}); S.isOwner=true; }catch(e){ S.adminKey=""; ss.del("cs-admin"); } }
+  if(S.adminKey){ try{ setWho(await api("admin/check",{})); S.isOwner=true; }catch(e){ S.adminKey=""; ss.del("cs-admin"); } }
   await refresh();
   logVisit(); await loadVisits(); if(S.visits) render(true);
   if(typeof maybeAutoNotice==="function") maybeAutoNotice();

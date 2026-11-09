@@ -275,7 +275,7 @@
     const c = S.courses.find(x=>x.id===SS.id); if(!c) return;
     const cols = SS.cols.map(x=>({k:x.k, label:x.label, sign:!!x.sign, pub:!!x.pub}));
     try{
-      await api("admin/course",{course:{...c, cols, ...(SS.signLabel!=null?{signLabel:SS.signLabel}:{}), ...(SS.signOff!=null?{signOff:SS.signOff}:{})}});
+      await api("admin/course",{course:{...c, cols, ...(SS.signLabel!=null?{signLabel:SS.signLabel}:{}), ...(SS.signOff!=null?{signOff:SS.signOff}:{})}, what:"簽到表欄位設定"});
       SS.signLabel = null; SS.signOff = null;
       SS.dirty = false; toast("欄位設定已儲存");
       await refresh(true);
@@ -300,7 +300,7 @@
   });
   async function saveDocs(){
     const c = S.courses.find(x=>x.id===SS.id); if(!c || !SS.docs) return;
-    try{ await api("admin/course",{course:{...c, sheetDocs:SS.docs}}); c.sheetDocs = {...SS.docs}; }catch(e){ toast(errMsg(e)); }
+    try{ await api("admin/course",{course:{...c, sheetDocs:SS.docs}, what:"-"}); c.sheetDocs = {...SS.docs}; }catch(e){ toast(errMsg(e)); }
   }
   box.addEventListener("change", e=>{
     const t = e.target;

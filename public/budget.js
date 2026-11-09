@@ -332,7 +332,7 @@
       </tbody></table>` : "";
     return `<div class="bp-doc">
       <h1>${esc(c.title)}　預算帳目表</h1>${sub?`<div class="bp-sub">${esc(sub)}</div>`:""}
-      <div class="bp-meta"><span>製表日期：${today}</span><span>製表人：${esc((S.me&&S.me.name)||"＿＿＿＿")}</span></div>
+      <div class="bp-meta"><span>製表日期：${today}</span><span>製表人：${esc((typeof makerName==="function"&&makerName())||"＿＿＿＿")}</span></div>
       ${r.answered?"":`<div class="warn">⚠️ 講師／嘉賓用餐尚未確認，以下支出可能不完整。</div>`}
       <h2>總覽</h2>
       <table><thead><tr><th></th><th>已收</th><th>預計（全部繳齊）</th></tr></thead><tbody>
@@ -405,7 +405,7 @@
     }
     return `<div class="bp-doc">
       <h1>${title}</h1><div class="bp-sub">${sub}</div>
-      <div class="bp-meta"><span>製表日期：${today}</span><span>製表人：${esc((S.me&&S.me.name)||"＿＿＿＿")}</span></div>
+      <div class="bp-meta"><span>製表日期：${today}</span><span>製表人：${esc((typeof makerName==="function"&&makerName())||"＿＿＿＿")}</span></div>
       ${body}
       ${PS.sign?`<div class="signs"><div>承辦人：<span></span></div><div>主管核章：<span></span></div></div>`:""}
     </div>`;

@@ -220,6 +220,12 @@ tr.row-me td{background:var(--accent-soft);font-weight:700}
 .fold.closed>:not(h2.fold-h){display:none!important}
 .bg-cmp th.cur,.bg-cmp td.cur{background:var(--accent-soft)}
 .bg-cmp td{text-align:right;font-variant-numeric:tabular-nums}
+.own-log{margin-top:14px;padding-top:10px;border-top:1px dashed var(--line);display:flex;flex-direction:column;gap:8px}
+.own-log label.own{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:14px;white-space:nowrap;align-self:flex-start}
+.own-log label.own select{width:auto;max-width:70vw}
+.own-log select{font:inherit;font-size:14px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+.own-log summary{cursor:pointer;font-size:14px;color:var(--muted)}
+.log-t td{font-size:13px;padding:5px 8px}.log-t td:nth-child(2){white-space:nowrap}.log-t td:last-child{width:60%}
 .bgbox input.bg-n{width:5em}.bgbox input.bg-q{width:5em;margin-left:6px}
 .bgbox select.bg-prize{width:auto;max-width:10em}
 .bgbox td.qty{white-space:nowrap}
@@ -391,6 +397,7 @@ footer.foot{margin-top:48px;padding-top:16px;border-top:1px solid var(--line);di
 <script src="budget.js"></script>
 <script src="notice.js"></script>
 <script src="calendar.js"></script>
+<script src="staff.js"></script>
 <script>
 (function(){
   var bar=document.getElementById("stickyTop"), root=document.documentElement;
