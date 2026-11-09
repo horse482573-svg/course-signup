@@ -396,6 +396,21 @@ export async function onRequest({ request, env, params }) {
         if (!r.meta.changes) return J({ ok: false, error: "not_found" }, 404);
         return J({ ok: true, code });
       }
+      // 訓育委員、經管委員自己改登入碼
+      case "admin/staff/self-code": {
+        if (!who.id) return deny();
+        const cur = String(body.current || ""), next = String(body.next || "");
+        const me = await db.prepare("SELECT code_hash FROM staff WHERE id = ?").bind(who.id).first();
+        if (!me || me.code_hash !== await codeHash(env, cur)) return J({ ok: false, error: "bad_current" }, 400);
+        const n = normCode(next);
+        if (n.length < 8 || n.length > 40 || !/[a-z]/.test(n) || !/\d/.test(n)) return J({ ok: false, error: "weak_code" }, 400);
+        if (safeEqual(next, env.ADMIN_PASSWORD) || n === normCode(env.ADMIN_PASSWORD)) return J({ ok: false, error: "code_taken" }, 409);
+        const h = await codeHash(env, next);
+        const dup = await db.prepare("SELECT id FROM staff WHERE code_hash = ? AND id != ?").bind(h, who.id).first();
+        if (dup) return J({ ok: false, error: "code_taken" }, 409);
+        await db.prepare("UPDATE staff SET code_hash = ? WHERE id = ?").bind(h, who.id).run();
+        return J({ ok: true });
+      }
       case "admin/staff/owner-name": {
         if (who.role !== "owner") return deny();
         const name = str(body.name, 20) || "總管理員";

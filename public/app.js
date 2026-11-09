@@ -63,7 +63,7 @@ async function api(path, body, opts={}){
 const MSG = {
   onsite_closed:"本站報名暫停中，報名方式請洽課程舉辦人", network:"連線失敗，請檢查網路後再試一次", full:"這堂課已額滿", closed:"這堂課已截止報名",
   bad_input:"資料不完整，請檢查後再試", not_found:"找不到這堂課，可能已被刪除",
-  bad_key:"管理密碼或登入碼不對（可能已被停用），請重新登入", forbidden:"你的權限不能做這個操作", no_password:"網站還沒設定管理密碼（ADMIN_PASSWORD）",
+  bad_key:"管理密碼或登入碼不對（可能已被停用），請重新登入", forbidden:"你的權限不能做這個操作", bad_current:"目前的登入碼不對", weak_code:"新的登入碼至少 8 個字，要有英文和數字", code_taken:"這組登入碼不能使用，請換一組", no_password:"網站還沒設定管理密碼（ADMIN_PASSWORD）",
   too_large:"圖片太大，請換一張小一點的圖片", unsupported_type:"不支援這種圖片格式，請用 JPG 或 PNG",
 };
 const errMsg = e => MSG[e && e.error] || "操作沒有成功，請稍後再試";
@@ -250,8 +250,8 @@ function render(soft){
 }
 function renderWho(){
   $("#who").innerHTML = S.me
-    ? `目前身分：<b>${esc(S.me.name)}</b> · ${esc(subline(S.me))}${S.isOwner?` · ${esc(S.adminName||"")}（${ROLE_LABEL[S.role]||"課程舉辦人"}）`:""} <button class="btn link" data-act="edit-profile" style="padding:0 0 0 6px;font-size:13px">修改</button>`
-    : `<button class="btn link" data-act="edit-profile" style="padding:0;font-size:13px">填寫我的報名資料</button>${S.isOwner?` · ${esc(S.adminName||"")}（${ROLE_LABEL[S.role]||"課程舉辦人"}）`:""}`;
+    ? `目前身分：<b>${esc(S.me.name)}</b> · ${esc(subline(S.me))}${S.isOwner?` · ${esc(S.adminName||"")}（${ROLE_LABEL[S.role]||"課程舉辦人"}）${S.adminId?` <button class="btn link" data-act="my-code" style="padding:0 0 0 4px;font-size:13px">🔑 改登入碼</button>`:""}`:""} <button class="btn link" data-act="edit-profile" style="padding:0 0 0 6px;font-size:13px">修改</button>`
+    : `<button class="btn link" data-act="edit-profile" style="padding:0;font-size:13px">填寫我的報名資料</button>${S.isOwner?` · ${esc(S.adminName||"")}（${ROLE_LABEL[S.role]||"課程舉辦人"}）${S.adminId?` <button class="btn link" data-act="my-code" style="padding:0 0 0 4px;font-size:13px">🔑 改登入碼</button>`:""}`:""}`;
 }
 
 /* 課程總覽（書架） */

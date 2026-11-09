@@ -96,4 +96,48 @@
     const t = e.target; if(!t.closest || !t.closest("#stadmin") || t.dataset.st!=="role") return;
     try{ await api("admin/staff/update",{id:t.dataset.id, role:t.value}); await after("已變更權限"); }catch(ex){ toast(errMsg(ex)); }
   });
+
+  /* ---------- 訓育委員／經管委員：自己改登入碼 ---------- */
+  const dlg = document.createElement("div"); dlg.id="mycode"; dlg.hidden=true; dlg.setAttribute("role","dialog"); dlg.setAttribute("aria-label","修改我的登入碼");
+  document.body.appendChild(dlg);
+  const st2 = document.createElement("style");
+  st2.textContent = `
+#mycode{position:fixed;inset:0;z-index:230;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px}
+#mycode[hidden]{display:none}
+#mycode form{background:var(--surface,#fff);color:var(--ink,#111);border-radius:12px;padding:18px 18px 14px;width:min(400px,100%);box-shadow:0 8px 30px rgba(0,0,0,.3);display:flex;flex-direction:column;gap:10px}
+#mycode h3{margin:0 0 4px;font-size:17px}
+#mycode label{display:flex;flex-direction:column;gap:4px;font-size:13.5px;color:var(--muted)}
+#mycode input{font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+#mycode ul{margin:0;padding-left:1.2em;font-size:12.5px;color:var(--muted)}
+#mycode .row{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:4px}
+#mycode .err{margin-right:auto}
+`;
+  document.head.appendChild(st2);
+  function openMyCode(){
+    dlg.innerHTML = `<form id="mycodeForm" autocomplete="off"><h3>🔑 修改我的登入碼</h3>
+      <label>目前的登入碼<input type="password" id="mc-cur" autocomplete="current-password" required></label>
+      <label>新的登入碼<input type="password" id="mc-new" autocomplete="new-password" required></label>
+      <label>再輸入一次<input type="password" id="mc-new2" autocomplete="new-password" required></label>
+      <ul><li>至少 8 個字，要有英文和數字（大小寫、空格、「-」不影響）</li><li>不能和別人的登入碼相同</li><li>忘記的話，請找總管理員重設</li></ul>
+      <div class="row"><span class="err" id="mc-err"></span><button type="button" class="btn link" data-mc="cancel">取消</button><button type="submit" class="btn primary">確定修改</button></div></form>`;
+    dlg.hidden = false; setTimeout(()=>document.getElementById("mc-cur")?.focus(), 0);
+  }
+  const closeMyCode = () => { dlg.hidden = true; dlg.innerHTML = ""; };
+  dlg.addEventListener("click", e=>{ if(e.target===dlg || e.target.closest("[data-mc=cancel]")) closeMyCode(); });
+  document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !dlg.hidden) closeMyCode(); });
+  dlg.addEventListener("submit", async e=>{
+    e.preventDefault();
+    const cur = document.getElementById("mc-cur").value, nx = document.getElementById("mc-new").value, nx2 = document.getElementById("mc-new2").value;
+    const er = document.getElementById("mc-err"), norm = v => v.replace(/[\s-]/g,"").toLowerCase();
+    if(norm(nx)!==norm(nx2)){ er.textContent = "兩次輸入的新登入碼不一樣"; return; }
+    const n = norm(nx);
+    if(n.length<8 || !/[a-z]/.test(n) || !/\d/.test(n)){ er.textContent = "至少 8 個字，要有英文和數字"; return; }
+    const btn = dlg.querySelector("button[type=submit]"); btn.disabled = true; er.textContent = "";
+    try{
+      await api("admin/staff/self-code", {current:cur, next:nx});
+      S.adminKey = nx; try{ ss.set("cs-admin", nx); }catch(_){}
+      closeMyCode(); toast("登入碼已修改，下次請用新的登入碼登入");
+    }catch(ex){ er.textContent = errMsg(ex); btn.disabled = false; }
+  });
+  document.addEventListener("click", e=>{ if(e.target.closest("[data-act=my-code]")){ e.stopPropagation(); openMyCode(); } }, true);
 })();
