@@ -29,19 +29,33 @@ while d<=last:
 months={}
 for x in sched: months.setdefault(x.month,[]).append(x)
 done_months=[m for m,xs in months.items() if xs[-1].month==m and (dt.date(2026,m%12+1,1)-dt.timedelta(1)) <= last+dt.timedelta(2)]
-out=[]
-for n in A["names"]:
-    if n in EXCLUDE: continue
-    full=[w for w in weeks if all(att(n,x) for x in w)]
-    wed=sum(1 for w in weeks if real(n,w[1]))
-    mon=[m for m in done_months if all(att(n,x) for x in months[m])]
+# 每月結算：週獎勵算在「該週週一」的月份；已過的月份標「已頒」，獎品字樣放在「：」後面，簽收表只算本月
+CUR=last.month
+def month_award(n,m):
+    ws=[w for w in weeks if w[0].month==m]
+    full=[w for w in ws if all(att(n,x) for x in w)]
+    wed=sum(1 for w in ws if real(n,w[1]))
     coffee=len(full)+wed
+    head=[f"咖啡券 {coffee} 張"] if coffee else []
+    if m in done_months and all(att(n,x) for x in months[m]): head.append("星巴克禮券 2 張")
     parts=[]
     if full: parts.append(f"整週出席 {len(full)} 週")
     if wed: parts.append(f"週三加碼 {wed} 次")
-    head=[f"咖啡券 {coffee} 張"] if coffee else []
-    head+= [f"星巴克禮券 2 張（{m} 月全勤）" for m in mon]
-    award=("＋".join(head)+("："+"＋".join(parts) if parts else "")) if head else ""
+    return coffee,head,parts
+out=[]
+for n in A["names"]:
+    if n in EXCLUDE: continue
+    coffee,head,parts=month_award(n,CUR)
+    past=[]
+    for m in sorted({w[0].month for w in weeks}|set(done_months)):
+        if m==CUR: continue
+        _,h,_p=month_award(n,m)
+        if h: past.append(f"{m} 月已頒 "+"、".join(x.replace(" ","") for x in h))
+    award="＋".join(head) if head else ""
+    tail=[]
+    if parts: tail.append(f"{CUR} 月"+"＋".join(parts))
+    tail+=past
+    if tail: award=(award or f"{CUR} 月尚無")+"：" + "｜".join(tail)
     out.append({"unit":"高雄","division":DIV.get(n,""),"name":n,"title":"","meal":"","drink":"","award":award,"days":cnt(n),"_c":coffee})
 out=[p for p in out if p["days"]>0 and p["division"]!="GO總公司"]  # 出席 0 天不列；GO總公司＝行政人員
 out.sort(key=lambda p:(-p["_c"],-p["days"]))
