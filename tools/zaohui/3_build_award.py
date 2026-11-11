@@ -55,7 +55,7 @@ for n in A["names"]:
     tail=[]
     if parts: tail.append(f"{CUR} 月"+"＋".join(parts))
     tail+=past
-    if tail: award=(award or f"{CUR} 月尚無")+"：" + "｜".join(tail)
+    if tail: award=(award+"：" if award else f"{CUR} 月尚無｜") + "｜".join(tail)
     out.append({"unit":"高雄","division":DIV.get(n,""),"name":n,"title":"","meal":"","drink":"","award":award,"days":cnt(n),"_c":coffee})
 out=[p for p in out if p["days"]>0 and p["division"]!="GO總公司"]  # 出席 0 天不列；GO總公司＝行政人員
 out.sort(key=lambda p:(-p["_c"],-p["days"]))

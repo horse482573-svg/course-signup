@@ -156,7 +156,7 @@
 
   /* ---------- 依獎品分開的簽收表（例如：星巴克咖啡券、一般咖啡券）---------- */
   function prizeParts(award){
-    return String(award||"").split(/[：:]/)[0].split(/[＋+]/).map(x=>x.replace(/（[^）]*）|\([^)]*\)/g,"").trim())
+    return String(award||"").split(/[：:｜|]/)[0].split(/[＋+]/).map(x=>x.replace(/（[^）]*）|\([^)]*\)/g,"").trim())
       .map(x=>{ const m = x.match(/^(.+?)\s*(\d+)\s*(張|份|個|組|盒|杯)?$/); return m ? {name:m[1].trim(), qty:+m[2], unit:m[3]||"張"} : null; }).filter(Boolean);
   }
   window.prizeParts = prizeParts;
