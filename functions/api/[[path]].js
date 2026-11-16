@@ -156,6 +156,12 @@ async function addLog(db, w, courseId, action, detail) {
   } catch (e) {}
 }
 
+// ---------- 使用回饋 ----------
+async function feedbackNew(db) {
+  try { const r = await db.prepare("SELECT COUNT(*) AS n FROM feedback WHERE status = 'new'").first(); return r ? r.n : 0; } catch (e) { return 0; }
+}
+const FB_KINDS = { idea: 1, bug: 1, other: 1 };
+
 async function getCourse(db, id) {
   const r = await db.prepare("SELECT id, data FROM courses WHERE id = ?").bind(id).first();
   return r ? { id: r.id, ...JSON.parse(r.data) } : null;
@@ -220,6 +226,7 @@ export async function onRequest({ request, env, params }) {
         ok: true,
         admin,
         role: who ? who.role : "",
+        fbNew: canAll(who) ? await feedbackNew(db) : 0,
         courses,
         notice,
         calendars,
@@ -309,7 +316,39 @@ export async function onRequest({ request, env, params }) {
         return J({ ok: true });
       }
 
+      case "feedback": {
+        const text = str(body.body, 1000), kind = FB_KINDS[body.kind] ? body.kind : "other";
+        if (text.length < 2) return J({ ok: false, error: "bad_input" }, 400);
+        const anon = !!body.anon;
+        const ip = request.headers.get("cf-connecting-ip") || "";
+        const iph = ip ? (await sha((env.ADMIN_PASSWORD || "") + "|fb|" + ip)).slice(0, 16) : "";
+        if (iph) {
+          const since = new Date(Date.now() - 60 * 1000).toISOString();
+          const r = await db.prepare("SELECT COUNT(*) AS n FROM feedback WHERE iph = ? AND at > ?").bind(iph, since).first();
+          if (r && r.n) return J({ ok: false, error: "too_fast" }, 429);
+        }
+        await db.prepare("INSERT INTO feedback (at, kind, body, name, contact, page, status, note, iph) VALUES (?, ?, ?, ?, ?, ?, 'new', '', ?)")
+          .bind(now(), kind, text, anon ? "" : str(body.name, 20), str(body.contact, 80), str(body.page, 80), iph).run();
+        return J({ ok: true });
+      }
+
       // ---------- organizer ----------
+      case "admin/feedback/list": {
+        if (!canAll(who)) return deny();
+        const r = await db.prepare("SELECT id, at, kind, body, name, contact, page, status, note, done_by, done_at FROM feedback ORDER BY id DESC LIMIT 300").all();
+        return J({ ok: true, items: r.results });
+      }
+      case "admin/feedback/update": {
+        if (!canAll(who)) return deny();
+        const id = Math.round(+body.id || 0), x = await db.prepare("SELECT status, note FROM feedback WHERE id = ?").bind(id).first();
+        if (!x) return J({ ok: false, error: "not_found" }, 404);
+        const status = body.status === "done" || body.status === "new" ? body.status : x.status;
+        const note = body.note != null ? str(body.note, 300) : x.note;
+        const changed = status !== x.status;
+        await db.prepare("UPDATE feedback SET status = ?, note = ?, done_by = CASE WHEN ? THEN ? ELSE done_by END, done_at = CASE WHEN ? THEN ? ELSE done_at END WHERE id = ?")
+          .bind(status, note, changed ? 1 : 0, status === "done" ? who.name : "", changed ? 1 : 0, status === "done" ? now() : "", id).run();
+        return J({ ok: true });
+      }
       case "admin/visits": {
         if (who.role !== "owner") return deny();
         const r = await db.prepare(

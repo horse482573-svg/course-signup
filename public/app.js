@@ -117,11 +117,11 @@ function visitsBox(){
   </section>`;
 }
 async function refresh(soft){
-  const typing = soft && document.activeElement && document.activeElement.closest && document.activeElement.closest("#bgbox, #ss, #ntadmin, #stadmin, .own-log");
+  const typing = soft && document.activeElement && document.activeElement.closest && document.activeElement.closest("#bgbox, #ss, #ntadmin, #stadmin, #fbadmin, .own-log");
   try{
     const q = S.me ? "?"+new URLSearchParams({n:S.me.name||"", d:S.me.division||"", u:S.me.unit||""}) : "";
     const r = await api("state"+q);
-    S.courses = r.courses; S.signups = r.signups; S.rosters = r.rosters || {}; S.notice = r.notice || null; S.calendars = r.calendars || [];
+    S.courses = r.courses; S.signups = r.signups; S.rosters = r.rosters || {}; S.notice = r.notice || null; S.calendars = r.calendars || []; S.fbNew = r.fbNew || 0;
     S.loaded = true;
     $("#sync").textContent = "最後更新 " + fmtTime(new Date().toISOString()) + " · 每 20 秒自動更新";
   }catch(e){
@@ -600,6 +600,7 @@ function adminView(){
 
   const trial = !S.editing && S.trialOpen && typeof budgetSection==="function" ? `<div id="trialPanel">${budgetSection(trialCourse)}</div>` : "";
   return form + trial + adminTable()
+    + (canAll() && typeof feedbackAdmin==="function" && !S.editing ? fold("feedback", feedbackAdmin(), feedbackExtra()) : "")
     + (canAll() && typeof noticeAdmin==="function" && !S.editing ? fold("notice", noticeAdmin()) : "")
     + (canAll() && typeof calendarAdmin==="function" && !S.editing ? fold("cal", calendarAdmin()) : "")
     + (isTop() && typeof staffAdmin==="function" && !S.editing ? fold("staff", staffAdmin()) : "")
@@ -663,7 +664,7 @@ function adminStatus(c){
   return {label:"開放中", cls:"mine"};
 }
 /* 管理頁各區可收合（記在這台裝置） */
-const FOLD_DEFAULT = { notice:true, cal:true, staff:true, visits:true, courses:false, awards:false };   // true＝預設收合
+const FOLD_DEFAULT = { feedback:false, notice:true, cal:true, staff:true, visits:true, courses:false, awards:false };   // true＝預設收合
 function foldClosed(k){ try{ const m = JSON.parse(localStorage.getItem("cs-fold")||"{}"); if(k in m) return !!m[k]; }catch(e){} return !!FOLD_DEFAULT[k]; }
 function setFold(k, closed){ try{ const m = JSON.parse(localStorage.getItem("cs-fold")||"{}"); m[k]=closed; localStorage.setItem("cs-fold", JSON.stringify(m)); }catch(e){} }
 function fold(k, html, extra){

@@ -36,3 +36,7 @@ CREATE TABLE IF NOT EXISTS staff (id TEXT PRIMARY KEY, name TEXT NOT NULL, role 
 -- 操作紀錄
 CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, course_id TEXT NOT NULL, who TEXT, action TEXT, detail TEXT);
 CREATE INDEX IF NOT EXISTS logs_course ON logs (course_id, id);
+
+-- 使用回饋（匿名時不存姓名；iph＝IP 雜湊，只用來擋 1 分鐘內重複送出）
+CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, kind TEXT, body TEXT NOT NULL, name TEXT, contact TEXT, page TEXT, status TEXT NOT NULL DEFAULT 'new', note TEXT, iph TEXT, done_by TEXT, done_at TEXT);
+CREATE INDEX IF NOT EXISTS feedback_status ON feedback (status, id);
