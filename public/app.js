@@ -302,9 +302,30 @@ function gotoCourse(id){
   S.tab="all"; S.loginOpen=false; render();
   try{ history.replaceState(null,"","#c-"+id); }catch(e){}
   const el = document.getElementById("c-"+id); if(!el) return;
-  const reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
-  el.scrollIntoView({behavior:reduce?"auto":"smooth", block:"start"});
+  pinTo("c-"+id);
   el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+}
+/* 捲到某張課程卡，並在上方海報陸續載入、版面變高時持續對準（使用者自己捲動就停止）。
+   原因：海報是延遲載入，捲過去的途中上方圖片才撐開，卡片被往下推，畫面就停在別的課程。 */
+let pinStop = null;
+function pinTo(elId){
+  if(pinStop) pinStop();
+  const view = $("#view"), el0 = document.getElementById(elId); if(!view || !el0) return;
+  // 目標上方的圖片立刻載入，不要等捲到才載
+  view.querySelectorAll("img[loading=lazy]").forEach(img=>{ if(el0.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_PRECEDING) img.loading = "eager"; });
+  const align = () => { const el = document.getElementById(elId); if(el) el.scrollIntoView({behavior:"auto", block:"start"}); };
+  align();
+  let done = false, t1, t2;
+  const ro = new ResizeObserver(()=>{ if(!done) align(); });
+  ro.observe(view);
+  const stop = () => { if(done) return; done = true; ro.disconnect(); clearTimeout(t1); clearTimeout(t2); ["wheel","touchstart","keydown","mousedown"].forEach(ev=>window.removeEventListener(ev, stop, true)); pinStop = null; };
+  ["wheel","touchstart","keydown","mousedown"].forEach(ev=>window.addEventListener(ev, stop, {capture:true, passive:true}));
+  // 等圖片都載完後再對準一次，最多 6 秒
+  const pending = [...view.querySelectorAll("img")].filter(img=>!img.complete && (el0.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_PRECEDING));
+  Promise.all(pending.map(img=>new Promise(r=>{ img.addEventListener("load", r, {once:true}); img.addEventListener("error", r, {once:true}); })))
+    .then(()=>{ if(!done){ align(); t1 = setTimeout(stop, 400); } });
+  t2 = setTimeout(stop, 6000);
+  pinStop = stop;
 }
 
 function extHost(u){ try{ return new URL(u).hostname.replace(/^www\./,""); }catch(e){ return ""; } }
