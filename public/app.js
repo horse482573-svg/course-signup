@@ -242,13 +242,53 @@ function render(soft){
   if(!S.loaded) return;
   const v = $("#view");
   if(S.loginOpen){ if(!soft) v.innerHTML = loginView(); return; }
+  let html;
   if(S.tab==="admin"){
     if(soft && ((S.editing && $("#courseForm")) || S.importing)) return;
-    v.innerHTML = adminView();
+    html = adminView();
   }
-  else if(S.tab==="shelf") v.innerHTML = shelfView();
-  else if(S.tab==="award") v.innerHTML = awardView();
-  else v.innerHTML = listView(S.tab==="mine");
+  else if(S.tab==="shelf") html = shelfView();
+  else if(S.tab==="award") html = awardView();
+  else html = listView(S.tab==="mine");
+  if(soft && v.__html===html) return;          // 自動更新時內容沒變，就不重畫（避免畫面跳動）
+  const anchor = soft ? captureAnchor(v) : null;
+  if(soft) html = html.replace(/ loading="lazy"/g, "");   // 重畫時海報都已在快取，立刻顯示，不要先縮成 0 高
+  v.innerHTML = html; v.__html = html;
+  if(anchor) holdAnchor(anchor);
+}
+/* 自動更新重畫時，記住畫面上第一張可見的卡片，重畫後讓它留在原位置 */
+function captureAnchor(v){
+  const top = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--stick-h"))||0);
+  const els = v.querySelectorAll(".course[id], .award[id], .shelf-item, section[id], tr, .panel");
+  for(const el of els){
+    const r = el.getBoundingClientRect();
+    if(r.bottom > top + 4){
+      const key = el.id ? "#"+CSS.escape(el.id) : null;
+      const idx = key ? -1 : [...v.querySelectorAll(el.tagName.toLowerCase()+(el.className?"."+[...el.classList].map(c=>CSS.escape(c)).join("."):""))].indexOf(el);
+      return { key, tag: el.tagName.toLowerCase(), cls: [...el.classList], idx, y: r.top };
+    }
+  }
+  return null;
+}
+function findAnchor(a){
+  const v = $("#view"); if(!v) return null;
+  if(a.key) return v.querySelector(a.key);
+  const sel = a.tag + (a.cls.length ? "."+a.cls.map(c=>CSS.escape(c)).join(".") : "");
+  return v.querySelectorAll(sel)[a.idx] || null;
+}
+let holdStop = null;
+function holdAnchor(a){
+  if(holdStop) holdStop();
+  if(typeof pinStop==="function" && pinStop) return;      // 正在「前往課程」對準中，交給它
+  const fix = () => { const el = findAnchor(a); if(!el) return; const d = el.getBoundingClientRect().top - a.y; if(Math.abs(d) > 1) window.scrollBy(0, d); };
+  fix();
+  let done = false;
+  const ro = new ResizeObserver(()=>{ if(!done) fix(); }); ro.observe($("#view"));
+  const evs = ["wheel","touchstart","keydown","mousedown"];
+  const stop = () => { if(done) return; done = true; ro.disconnect(); evs.forEach(ev=>window.removeEventListener(ev, stop, true)); holdStop = null; };
+  evs.forEach(ev=>window.addEventListener(ev, stop, {capture:true, passive:true}));
+  setTimeout(stop, 2500);
+  holdStop = stop;
 }
 function renderWho(){
   $("#who").innerHTML = S.me
