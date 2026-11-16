@@ -3,7 +3,8 @@
   const KIND = { idea:"建議", bug:"問題回報", other:"其他" };
   const st = document.createElement("style");
   st.textContent = `
-#fbBtn{position:fixed;right:16px;bottom:16px;z-index:150;border:0;border-radius:999px;padding:10px 16px;font:inherit;font-size:14px;font-weight:600;background:var(--accent,#2f6fed);color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.22);cursor:pointer}
+#fbBtn{position:fixed;right:16px;bottom:16px;z-index:150;border:0;border-radius:999px;padding:10px 16px;font:inherit;font-size:14px;font-weight:600;background:#38bdf8;color:#111;border:2px solid #0ea5e9;box-shadow:0 4px 14px rgba(14,165,233,.35);cursor:pointer}
+#fbBtn:focus-visible{outline:3px solid #111;outline-offset:2px}
 #fbBtn:hover{filter:brightness(1.08)}
 body.tab-admin #fbBtn{display:none}
 body:not(.tab-admin){padding-bottom:64px}
