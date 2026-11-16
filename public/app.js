@@ -66,6 +66,8 @@ const MSG = {
   bad_key:"管理密碼或登入碼不對（可能已被停用），請重新登入", forbidden:"你的權限不能做這個操作", bad_current:"目前的登入碼不對", weak_code:"新的登入碼至少 8 個字，要有英文和數字", code_taken:"這組登入碼不能使用，請換一組", no_password:"網站還沒設定管理密碼（ADMIN_PASSWORD）",
   too_large:"圖片太大，請換一張小一點的圖片", unsupported_type:"不支援這種圖片格式，請用 JPG 或 PNG",
 };
+// 說明文字裡的網址變成可點的連結（先跳脫再轉換，安全）
+const linkify = t => esc(t).replace(/https?:\/\/[^\s<>"'）)」]+/g, u => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
 const errMsg = e => MSG[e && e.error] || "操作沒有成功，請稍後再試";
 /* 管理權限：owner 總管理員、trainer 訓育委員（全部課程獎勵＋公告＋行事曆）、manager 經管委員（只管自己設立的） */
 const ROLE_LABEL = { owner:"總管理員", trainer:"訓育委員", manager:"經管委員" };
@@ -370,7 +372,7 @@ function courseCard(c){
       </div>
       ${c.poster?`<button type="button" class="poster" data-act="zoom" data-src="${esc(blob(c.poster))}" aria-label="放大海報"><img src="${esc(blob(c.poster))}" alt="${esc(c.title)} 課程海報" loading="lazy"></button>`:""}
       ${c.summary?`<p class="summary">${esc(c.summary)}</p>`:""}
-      ${c.detail?`<details class="more"><summary>課程詳細介紹</summary><p>${esc(c.detail)}</p></details>`:""}
+      ${c.detail?`<details class="more"><summary>課程詳細介紹</summary><p>${linkify(c.detail)}</p></details>`:""}
       ${(c.payQr||c.payNote)?`<details class="more pay"${mine?" open":""}><summary>繳費資訊${mine?"（你已報名，請依下方資訊完成繳費）":""}</summary>
         <div class="payrow">${c.payQr?`<img class="qr" src="${esc(blob(c.payQr))}" alt="繳費 QR Code" data-act="zoom" data-src="${esc(blob(c.payQr))}">`:""}${c.payNote?`<p>${esc(c.payNote)}</p>`:""}</div></details>`:""}
       <div class="seats">
@@ -448,7 +450,7 @@ function awardCard(a){
       <div class="award-period"><small>獎勵期間</small><b>${esc(period)}</b>${st.key==="on"&&left!==null&&left>=0?`<span class="who">${left===0?"今天截止":`還有 ${left} 天`}</span>`:""}</div>
       ${a.summary?`<p class="summary">${esc(a.summary)}</p>`:""}
       ${me}
-      ${a.detail?`<div class="award-notes"><h4>獎勵注意事項</h4><p>${esc(a.detail)}</p></div>`:""}
+      ${a.detail?`<div class="award-notes"><h4>獎勵注意事項</h4><p>${linkify(a.detail)}</p></div>`:""}
       <div class="roster">
         <h4>目前達成名單 · ${won} 人${won<list.length?`（共列出 ${list.length} 人）`:""}${a.asOf?` · 統計至 ${esc(a.asOf)}`:""}${info?` · ${fmtTime(info.importedAt)} 更新`:""}</h4>
         ${hasDays && a.starDays>0?`<p class="star-legend">⭐ = 出席天數超過${esc(a.starLabel||"標準")}（目前 ${a.starDays} 天）</p>`:""}
