@@ -86,7 +86,7 @@
     let list = colRows(c);
     if(isAward(c) && SS.wonOnly) list = list.filter(p=>String(p.award||"").trim()); // 只列有領獎的人
     if(SS.unitOnly && c.listOnly && c.listUnit) list = list.filter(p=>normUnit(p.unit)===normUnit(c.listUnit));
-    if(SS.sort==="div") list = [...list].sort((a,b)=>String(a.division||"").localeCompare(String(b.division||""),"zh-Hant")||String(a.name||"").localeCompare(String(b.name||""),"zh-Hant"));
+    if(SS.sort==="div") list = [...list].sort(byDivision);
     return list;
   }
   const signOn = c => !(SS.signOff ?? c.signOff);
@@ -257,7 +257,7 @@
     box.innerHTML = `<div class="ss-bar">
         <b>${!signOn(c)?"名單":isAward(c)?"領獎簽收表":"簽到表"}預覽 · ${n} 人${d.sign?` · ${pages} 頁${single?" · 單欄":""}`:""}</b>
         <span class="ss-docs">產出內容：<label><input type="checkbox" data-ss-doc="sign"${d.sign?" checked":""}> ${!signOn(c)?"名單":isAward(c)?(prizes.length>1?"簽收表（合併）":"簽收表"):"簽到表"}</label>${prizes.length>1?prizes.map(nm=>`<label><input type="checkbox" data-ss-prize="${esc(nm)}"${(d.prizes||{})[nm]?" checked":""}> ${esc(prizeLabel(nm))}簽收表</label>`).join(""):""}<label><input type="checkbox" data-ss-doc="stats"${d.stats?" checked":""}> 統計表</label></span>
-        <label>排序 <select data-ss="sort"><option value="list"${SS.sort==="list"?" selected":""}>依名單順序</option><option value="div"${SS.sort==="div"?" selected":""}>依事業部</option></select></label>
+        ${isAward(c)?`<label>排序 <select data-ss="sort"><option value="list"${SS.sort==="list"?" selected":""}>依排名</option><option value="div"${SS.sort==="div"?" selected":""}>依事業部筆畫</option></select></label>`:`<span class="who">依事業部筆畫排序</span>`}
         <label><input type="checkbox" data-ss="blanks"${SS.blanks?" checked":""}> 補空白列（現場加簽）</label>
         ${isAward(c) && officialFor(c.id).some(p=>!String(p.award||"").trim())?`<label><input type="checkbox" data-ss="wonOnly"${SS.wonOnly?" checked":""}> 只列有領獎的人</label>`:""}
         ${hasUnit?`<label><input type="checkbox" data-ss="unitOnly"${SS.unitOnly?" checked":""}> 只列${esc(c.listUnit)}業務中心</label>`:""}

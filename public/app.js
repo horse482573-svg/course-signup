@@ -172,7 +172,14 @@ function peopleFor(c){
     return {...p, ...m, confirmed:i>=0, src:i>=0?"both":"self"};
   });
   for(const o of off) if(!o.used) out.push({...entryOf(o), note:o.title, pkey:null, at:"", confirmed:true, src:ext?"official":"list"});
-  return out;
+  return out.sort(byDivision);   // 課程名單、簽到表：依事業部筆畫（少→多）
+}
+/* 中文筆畫排序（zh-Hant 的預設排序就是筆畫）；沒填事業部的排最後 */
+const ZH = new Intl.Collator("zh-Hant-TW");
+function byDivision(a, b){
+  const da = String(a.division||"").trim(), db = String(b.division||"").trim();
+  if(!da !== !db) return da ? -1 : 1;
+  return ZH.compare(da, db) || ZH.compare(String(a.name||""), String(b.name||""));
 }
 /* ---------- 欄位設定（簽到表／網站顯示）----------
    k：division 事業部、name 姓名、meal/drink 餐點、note 備註、award 獎勵、days 出席天數、x:表頭 名單其他欄位、b:名稱 空白欄 */
